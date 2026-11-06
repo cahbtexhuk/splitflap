@@ -58,15 +58,15 @@
   #include "driver/spi_master.h"
   #include "driver/spi_slave.h"
 
-  #define LATCH_PIN (25)
+  #define LATCH_PIN (22)
 
   // Optional - uncomment if connecting the output enable pin of the 74HC595 shift registers
   // to the ESP32. You can otherwise hard-wire the output enable pins to always be enabled.
   // #define OUTPUT_ENABLE_PIN (27)
 
-  #define PIN_NUM_MISO 39
-  #define PIN_NUM_MOSI 32
-  #define PIN_NUM_CLK  33
+  #define PIN_NUM_MISO 25
+  #define PIN_NUM_MOSI 21
+  #define PIN_NUM_CLK  32
 
   // Note: You may need to slow this down to 3MHz if you're using a classic driver board;
   // the MIC5842 only officially supports up to 3.3MHz
