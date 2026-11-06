@@ -1,0 +1,5 @@
+Flask>=3.0,<4
+waitress>=3.0,<4
+pyserial>=3.5,<4
+cobs>=1.2,<2
+protobuf==3.20.3

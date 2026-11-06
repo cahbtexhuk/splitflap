@@ -48,8 +48,10 @@ void SerialTask::run() {
                 break;
             default:
                 log("Unknown protocol requested");
-                break;
+                return;
         }
+        SplitflapState state = splitflap_task_.getState();
+        current_protocol->handleState(state, state);
     };
 
     legacy_protocol_.setProtocolChangeCallback(protocol_change_callback);
