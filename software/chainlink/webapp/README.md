@@ -45,3 +45,6 @@ Browse to `http://192.168.1.50:8765`. Repeat `--allowed-host` for each DNS name 
 ```
 
 Tests use a simulated device and do not move physical drums. Inspect reported errors and counters first, then test motion only when the mechanism can be observed. See [serial communication](../../../docs/SerialCommunication.md) for protocol and diagnostics.
+## Offset display
+
+Protocol version 2 firmware reports each drum's current offset in motor steps. Version 1 displays `--`; upload the current firmware to enable offset reporting. Offset adjustments are not persistent until explicitly saved.

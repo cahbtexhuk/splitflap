@@ -347,7 +347,7 @@ int8_t SplitflapTask::findFlapIndex(uint8_t character) {
 }
 
 void SplitflapTask::updateStateCache() {
-    SplitflapState new_state;
+    SplitflapState new_state = {};
     new_state.mode = sensor_test_ ? SplitflapMode::MODE_SENSOR_TEST : SplitflapMode::MODE_RUN;
     for (uint8_t i = 0; i < NUM_MODULES; i++) {
       new_state.modules[i].flap_index = modules[i]->GetCurrentFlapIndex();
@@ -356,6 +356,7 @@ void SplitflapTask::updateStateCache() {
       new_state.modules[i].home_state = modules[i]->GetHomeState();
       new_state.modules[i].count_missed_home = modules[i]->count_missed_home;
       new_state.modules[i].count_unexpected_home = modules[i]->count_unexpected_home;
+    new_state.modules[i].offset_steps = modules[i]->GetOffset();
     }
 
 #ifdef CHAINLINK

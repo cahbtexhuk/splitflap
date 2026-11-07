@@ -28,8 +28,10 @@
  *      - May or may not have software offset support
  * 1:
  *      - GeneralState is introduced (including introduction of serial protocol versioning)
+ * 2:
+ *      - Module offset reporting
 */
-#define SERIAL_PROTOCOL_VERSION (1);
+#define SERIAL_PROTOCOL_VERSION (2);
 
 class SerialProtoProtocol : public SerialProtocol {
     public:

@@ -103,6 +103,24 @@ class SerialServiceTests(unittest.TestCase):
         with self.assertRaises(ServiceError):
             self.service.home([2])
 
+    def test_offsets_are_optional_and_full_flap_is_rejected(self):
+        self.assertIsNone(self.service.snapshot()['modules'][0]['offset_steps'])
+        with self.assertRaises(ServiceError):
+            self.service.offset([0], 'full')
+        general = pb.FromSplitflap()
+        general.general_state.serial_protocol_version = 2
+        general.general_state.flap_character_set = b' AB'
+        self.device.emit(general)
+        state = pb.FromSplitflap()
+        state.splitflap_state.modules.add().offset.steps = 0
+        state.splitflap_state.modules.add().offset.steps = 123
+        self.device.emit(state)
+        self.wait_for(lambda: self.service.snapshot()['protocol_version'] == 2
+                      and self.service.snapshot()['modules'][1]['offset_steps'] == 123)
+        self.assertEqual(self.service.snapshot()['modules'][0]['offset_steps'], 0)
+        with self.assertRaises(ServiceError):
+            self.service.offset([1], 'full')
+
     def test_retry_uses_the_same_nonce(self):
         self.wait_for(lambda: not self.service.snapshot()['busy'])
         self.service.RETRY_INTERVAL = 0.02

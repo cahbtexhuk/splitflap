@@ -21,6 +21,10 @@ message SplitflapState {
         bool home_state = 4;
         uint32 count_unexpected_home = 5 [(nanopb).int_size = IS_8];
         uint32 count_missed_home = 6 [(nanopb).int_size = IS_8];
+        message Offset {
+            uint32 steps = 1 [(nanopb).int_size = IS_16];
+        }
+        Offset offset = 7;
     }
 
     repeated ModuleState modules = 1 [(nanopb).max_count = 255];

@@ -34,6 +34,7 @@ struct SplitflapModuleState {
     bool home_state;
     uint8_t count_unexpected_home;
     uint8_t count_missed_home;
+    uint16_t offset_steps;
 
     bool operator==(const SplitflapModuleState& other) {
         return state == other.state
@@ -41,7 +42,8 @@ struct SplitflapModuleState {
             && moving == other.moving
             && home_state == other.home_state
             && count_unexpected_home == other.count_unexpected_home
-            && count_missed_home == other.count_missed_home;
+            && count_missed_home == other.count_missed_home
+            && offset_steps == other.offset_steps;
     }
 
     bool operator!=(const SplitflapModuleState& other) {

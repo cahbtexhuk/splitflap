@@ -93,6 +93,8 @@ void SerialProtoProtocol::loop() {
                     .home_state = latest_state_.modules[i].home_state,
                     .count_unexpected_home = latest_state_.modules[i].count_unexpected_home,
                     .count_missed_home = latest_state_.modules[i].count_missed_home,
+                    .has_offset = true,
+                    .offset = { .steps = latest_state_.modules[i].offset_steps },
                 };
             }
             #ifdef CHAINLINK

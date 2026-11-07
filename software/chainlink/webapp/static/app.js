@@ -43,7 +43,7 @@ function renderModules() {
   if (!modules.length) {
     const row = body.insertRow();
     const item = cell(row, 'Connect a device to see drum status.', 'empty');
-    item.colSpan = 8;
+    item.colSpan = 9;
   }
   modules.forEach(module => {
     const row = body.insertRow();
@@ -60,6 +60,7 @@ function renderModules() {
     cell(row, module.home_state ? 'Active' : 'Inactive');
     cell(row, module.count_missed_home);
     cell(row, module.count_unexpected_home);
+    cell(row, module.offset_steps == null ? '--' : module.offset_steps);
   });
 }
 function renderList(id, entries, render) {

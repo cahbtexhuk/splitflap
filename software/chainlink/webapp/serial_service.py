@@ -278,7 +278,8 @@ class SerialService:
                     {'index': index, 'state': states.Name(module.state), 'flap_index': module.flap_index,
                      'moving': module.moving, 'home_state': module.home_state,
                      'count_missed_home': module.count_missed_home,
-                     'count_unexpected_home': module.count_unexpected_home}
+                     'count_unexpected_home': module.count_unexpected_home,
+                     'offset_steps': module.offset.steps if module.HasField('offset') else None}
                     for index, module in enumerate(message.splitflap_state.modules)]
                 self._snapshot['loopbacks_ok'] = message.splitflap_state.loopbacks_ok
                 self._state_time = time.monotonic()
@@ -294,7 +295,7 @@ class SerialService:
                                       build={'git_hash': state.build_info.git_hash,
                                              'date': state.build_info.build_date,
                                              'os': state.build_info.build_os})
-                if state.serial_protocol_version != 1 or ' ' not in alphabet or not alphabet.isascii():
+                if state.serial_protocol_version not in (1, 2) or ' ' not in alphabet or not alphabet.isascii():
                     self._snapshot['error'] = 'Unsupported protocol version or missing blank flap'
                     self._snapshot['connection'] = 'error'
                     self._stop.set()
@@ -310,5 +311,5 @@ class SerialService:
                         self._set_operation(self._save_id, 'failed', text)
                         self._save_id = None
             if (self._snapshot['connection'] == 'connecting' and self._snapshot['modules']
-                    and self._snapshot['protocol_version'] == 1 and self._snapshot['alphabet']):
+                    and self._snapshot['protocol_version'] in (1, 2) and self._snapshot['alphabet']):
                 self._snapshot['connection'] = 'ready'

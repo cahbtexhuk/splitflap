@@ -16,7 +16,7 @@ The canonical schema is [splitflap.proto](../proto/splitflap.proto); the firmwar
 
 `ToSplitflap.nonce` identifies a request. The firmware ACKs a valid decoded packet before dispatch and suppresses a repeat of the most recently handled nonce. Retry using the same nonce; use a different nonce for each new request. An ACK confirms receipt, not execution, completed motion, or a successful save.
 
-`request_state` requests module and general state. State is sent on change, rate-limited to about 100 ms, and at least every five seconds; general state is sent approximately every two seconds. Protocol version 1 includes the device character set, build and uptime.
+`request_state` requests module and general state. State is sent on change, rate-limited to about 100 ms, and at least every five seconds; general state is sent approximately every two seconds. Protocol version 1 includes the device character set, build and uptime. Version 2 adds current per-module offsets in motor steps; version 1 does not report offsets.
 
 Older firmware can report default values after switching to protobuf until a module changes state. Current source initializes the newly selected protocol with the current state. Build and upload the updated firmware before trusting the initial snapshot; uploading resets the device and may trigger homing.
 
@@ -24,13 +24,13 @@ Older firmware can report default values after switching to protobuf until a mod
 | --- | --- |
 | `SplitflapConfig` | Target indices and movement/reset nonces. Changing the movement nonce forces motion; changing the reset nonce clears counters and re-homes. |
 | `SplitflapCommand` | Module actions or `save_all_offsets`, sent separately without a module list. |
-| `SplitflapState` | State, flap index, moving and sensor flags, error counters, and Chainlink loopback state. |
+| `SplitflapState` | State, flap index, moving and sensor flags, error counters, offsets (version 2), and Chainlink loopback state. |
 | `GeneralState` | Protocol version, build, uptime and flap character set on standard Chainlink firmware. |
 | `SupervisorState` | Power supervisor details for Chainlink Base, not standard Chainlink. |
 | `Log` | Firmware messages, including offset save outcomes. |
 | `Ack` | Receipt of a valid request with its nonce. |
 
-`GO_TO_FLAP` takes a zero-based flap index. `RESET_AND_HOME` resets and re-homes addressed modules and clears their counters. `NO_OP` leaves an indexed module unchanged. Offset actions increase by one tenth or one half flap, wrapping forward; `SET_OFFSET` uses the current step. `save_all_offsets` is processed only if every module is stopped, with success or failure in logs. The protocol does not report current offsets. Clearing is not reset: command the reported blank flap on each module. Direct movement commands can cause a full revolution even when already at the target, and modules in error states may ignore them despite an ACK.
+`GO_TO_FLAP` takes a zero-based flap index. `RESET_AND_HOME` resets and re-homes addressed modules and clears their counters. `NO_OP` leaves an indexed module unchanged. Offset actions increase by one tenth or one half flap, wrapping forward; `SET_OFFSET` uses the current step. `save_all_offsets` is processed only if every module is stopped, with success or failure in logs. Clearing is not reset: command the reported blank flap on each module. Direct movement commands can cause a full revolution even when already at the target, and modules in error states may ignore them despite an ACK.
 
 States are `NORMAL`, `LOOK_FOR_HOME`, `SENSOR_ERROR`, `PANIC`, and `STATE_DISABLED`. The counters record missed and unexpected home sensor events. The default Chainlink LED pattern uses the state number as the number of blinks, so two blinks suggest `SENSOR_ERROR`; confirm with reported state. `moving` and `home_state` report motor motion and sensor input.
 
