@@ -54,6 +54,14 @@ def create_app(service=None, allowed_hosts=None):
     def status():
         return jsonify(controller.snapshot())
 
+    @app.get('/api/settings')
+    def settings():
+        return jsonify(controller.get_settings())
+
+    @app.post('/api/settings')
+    def update_settings():
+        return jsonify(controller.update_settings(body()))
+
     @app.post('/api/connect')
     def connect():
         data = body()

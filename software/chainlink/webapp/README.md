@@ -48,3 +48,10 @@ Tests use a simulated device and do not move physical drums. Inspect reported er
 ## Offset display
 
 Protocol version 2 firmware reports each drum's current offset in motor steps. Version 1 displays `--`; upload the current firmware to enable offset reporting. Offset adjustments are not persistent until explicitly saved.
+## Display workflow
+
+The dashboard has **Display Control**, **Config**, and **Connection** pages. Connection status stays in the header, and command/device logs remain visible on every page. Display Control provides left, center, and right alignment; short text is padded with blank flaps. By default, sends move only drums whose target flap changed. Enable **Flip all** to force every configured drum to rotate on each send. Clearing targets blanks across the configured display.
+
+Config's drum count defaults to 10 and is saved as a host setting shared by browser clients. It may be lower than the firmware's detected driver capacity, such as 10 configured drums on a 12-output setup, but cannot exceed it. Extra outputs remain visible in hardware status and are not moved by display messages or included in drum selection.
+
+The controller keeps message targets in memory only for the current serial session. It initializes them from fresh device status after connect and resets its baseline after reconnect or re-homing. No firmware or protocol changes are needed for changed-only movement.

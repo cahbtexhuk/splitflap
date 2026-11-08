@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -10,11 +11,13 @@ from serial_service import SerialService, ServiceError, pb
 
 
 class FakeSerial:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, module_count=2, alphabet=b' AB', **kwargs):
         self.incoming = Queue()
         self.commands = []
         self.closed = False
         self.drop_acks = 0
+        self.module_count = module_count
+        self.alphabet = alphabet
 
     def emit(self, message):
         for byte in encode_frame(message.SerializeToString()):
@@ -34,13 +37,13 @@ class FakeSerial:
             self.emit(response)
         if message.WhichOneof('payload') == 'request_state':
             state = pb.FromSplitflap()
-            state.splitflap_state.modules.add()
-            state.splitflap_state.modules.add()
+            for _ in range(self.module_count):
+                state.splitflap_state.modules.add()
             state.splitflap_state.loopbacks_ok = True
             self.emit(state)
             general = pb.FromSplitflap()
             general.general_state.serial_protocol_version = 1
-            general.general_state.flap_character_set = b' AB'
+            general.general_state.flap_character_set = self.alphabet
             self.emit(general)
         return len(data)
 
@@ -64,7 +67,11 @@ class FakeSerial:
 class SerialServiceTests(unittest.TestCase):
     def setUp(self):
         self.device = FakeSerial()
-        self.service = SerialService(lambda *args, **kwargs: self.device)
+        self.settings_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.settings_dir.cleanup)
+        self.settings_path = Path(self.settings_dir.name) / 'settings.json'
+        self.service = SerialService(lambda *args, **kwargs: self.device, self.settings_path)
+        self.service.update_settings({'display_count': 2})
         self.service.connect('fake')
         self.wait_for(lambda: self.service.snapshot()['connection'] == 'ready')
 
@@ -83,7 +90,7 @@ class SerialServiceTests(unittest.TestCase):
         self.wait_for(lambda: len(self.device.commands) >= 2)
         commands = self.device.commands[-1].splitflap_command.modules
         self.assertEqual([command.param for command in commands], [2, 0])
-        self.assertEqual([command.action for command in commands], [1, 1])
+        self.assertEqual([command.action for command in commands], [1, 0])
         with self.assertRaises(ServiceError):
             self.service.display('Z')
         with self.assertRaises(ServiceError):
@@ -94,6 +101,56 @@ class SerialServiceTests(unittest.TestCase):
         self.wait_for(lambda: len(self.device.commands) >= 2)
         actions = [item.action for item in self.device.commands[-1].splitflap_command.modules]
         self.assertEqual(actions, [0, pb.SplitflapCommand.ModuleCommand.RESET_AND_HOME])
+
+    def test_identical_message_does_not_send_again(self):
+        self.service.display('B')
+        self.wait_for(lambda: not self.service.snapshot()['busy'])
+        command_count = len(self.device.commands)
+        self.service.display('b')
+        self.assertEqual(len(self.device.commands), command_count)
+        self.assertEqual(self.service.snapshot()['operations'][-1]['status'], 'completed')
+
+    def test_only_different_positions_move_for_sequential_messages(self):
+        service_dir = Path(self.settings_dir.name)
+        device = FakeSerial(module_count=10, alphabet=b' 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+        service = SerialService(lambda *args, **kwargs: device, service_dir / 'ten-drum.json')
+        service.update_settings({'display_count': 10})
+        service.connect('fake-10')
+        self.addCleanup(service.disconnect)
+        self.wait_for(lambda: service.snapshot()['connection'] == 'ready')
+
+        service.display('0123456789')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        service.display('1113456789')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+
+        actions = [item.action for item in device.commands[-1].splitflap_command.modules]
+        params = [item.param for item in device.commands[-1].splitflap_command.modules]
+        self.assertEqual(actions, [1, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(params[0], 2)
+        self.assertEqual(params[2], 2)
+
+    def test_flip_all_forces_every_configured_drum(self):
+        self.service.update_settings({'flip_all': True})
+        self.service.display('')
+        self.wait_for(lambda: len(self.device.commands) >= 2)
+        actions = [item.action for item in self.device.commands[-1].splitflap_command.modules]
+        self.assertEqual(actions, [pb.SplitflapCommand.ModuleCommand.GO_TO_FLAP] * 2)
+
+    def test_alignment_and_host_settings_persist(self):
+        self.service.update_settings({'alignment': 'right'})
+        self.service.display('A')
+        self.wait_for(lambda: len(self.device.commands) >= 2)
+        commands = self.device.commands[-1].splitflap_command.modules
+        self.assertEqual([item.action for item in commands], [0, 1])
+        self.assertEqual([item.param for item in commands], [0, 1])
+        restored = SerialService(settings_path=self.settings_path)
+        self.assertEqual(restored.get_settings(), {
+            'display_count': 2, 'alignment': 'right', 'flip_all': False})
+
+    def test_configured_count_cannot_exceed_connected_hardware(self):
+        with self.assertRaises(ServiceError):
+            self.service.update_settings({'display_count': 3})
 
     def test_selected_offset_and_invalid_indices(self):
         self.service.offset([0], 'half')

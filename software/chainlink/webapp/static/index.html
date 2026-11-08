@@ -10,39 +10,59 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">S<span>F</span></span><div><strong>Splitflap</strong><small>CONTROL DESK</small></div></div>
-    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Disconnected</span></div>
+    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Disconnected</span><span class="connection-separator">/</span><span id="port-name">No port</span></div>
   </header>
   <main>
-    <div class="heading"><div><p class="eyebrow">DEVICE CONTROL / 01</p><h1>Display console</h1></div><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div><label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label></div></div>
+    <nav class="page-nav" aria-label="Main navigation" role="tablist">
+      <button id="tab-display" class="page-tab active" role="tab" aria-selected="true" aria-controls="page-display">Display Control</button>
+      <button id="tab-config" class="page-tab" role="tab" aria-selected="false" aria-controls="page-config">Config</button>
+      <button id="tab-connection" class="page-tab" role="tab" aria-selected="false" aria-controls="page-connection">Connection</button>
+    </nav>
     <div id="notice" class="notice" role="status" hidden></div>
     <div id="firmware-warning" class="notice" hidden>Older firmware may report default drum values after connection. Confirm the firmware includes the serial state-reporting fix.</div>
-    <section class="overview" aria-label="Display status">
-      <div><span class="metric-label">CONNECTION</span><strong id="port-name">Not connected</strong></div>
-      <div><span class="metric-label">MODULES</span><strong id="module-count">--</strong></div>
-      <div><span class="metric-label">LOOPBACK</span><strong id="loopback">--</strong></div>
-      <div><span class="metric-label">LAST UPDATE</span><strong id="last-update">--</strong></div>
-      <div><span class="metric-label">FIRMWARE</span><strong id="firmware">--</strong></div>
-    </section>
-    <div class="workspace">
-      <section class="main-column">
-        <div class="section-title"><div><p class="eyebrow">OUTPUT</p><h2>Message</h2></div><span id="character-count" class="muted">0 / --</span></div>
-        <form id="message-form" class="message-form"><label class="sr-only" for="message">Message</label><input id="message" placeholder="Enter a message" autocomplete="off" disabled><button id="send" class="primary" disabled>Send message</button><button type="button" id="clear" disabled>Clear</button></form>
+    <section id="page-display" class="page-panel" role="tabpanel" aria-labelledby="tab-display">
+      <div class="heading"><div><p class="eyebrow">OUTPUT / 01</p><h1>Display Control</h1></div><span id="character-count" class="muted">0 / 10</span></div>
+      <div class="display-controls">
+        <form id="message-form" class="message-form"><label class="sr-only" for="message">Message</label><input id="message" placeholder="Enter a message" autocomplete="off" disabled><button id="send" class="primary" disabled>Send message</button><button type="button" id="clear" disabled>Clear display</button></form>
         <p id="alphabet" class="alphabet">Available characters appear when connected.</p>
-        <div class="section-title modules-title"><div><p class="eyebrow">HARDWARE</p><h2>Drums</h2></div><button id="request-state" disabled>Refresh status</button></div>
-        <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all drums" disabled></th><th>DRUM</th><th>FLAP</th><th>STATE</th><th>MOTION</th><th>SENSOR</th><th>MISSED</th><th>UNEXPECTED</th><th>OFFSET (STEPS)</th></tr></thead><tbody id="modules"><tr><td colspan="9" class="empty">Connect a device to see drum status.</td></tr></tbody></table></div>
-      </section>
-      <aside class="side-column">
-        <div class="section-title"><div><p class="eyebrow">MAINTENANCE</p><h2>Calibration</h2></div></div>
-        <div class="selection-line"><span>Selected drums</span><strong id="selection-count">0</strong></div>
-        <button id="home" class="wide" disabled>Re-home selected</button>
-        <div class="rule"></div><p class="control-label">ADJUST OFFSET</p>
-        <div class="offset-grid"><button id="offset-tenth" disabled>+ 1/10 flap</button><button id="offset-half" disabled>+ 1/2 flap</button></div>
-        <button id="offset-set" class="wide secondary" disabled>Set to current position</button>
-        <div class="rule"></div><button id="save-offsets" class="wide" disabled>Save all offsets</button>
-        <p id="save-status" class="help">Offsets are saved only while all drums are stopped.</p>
-      </aside>
-    </div>
-    <section class="activity"><div class="section-title"><div><p class="eyebrow">DIAGNOSTICS</p><h2>Activity</h2></div></div><div class="activity-grid"><div><h3>Commands</h3><ul id="operations"><li class="empty">No commands yet.</li></ul></div><div><h3>Device log</h3><ul id="logs"><li class="empty">No messages yet.</li></ul></div></div></section>
+        <div class="display-options">
+          <fieldset class="alignment-control"><legend>Align</legend><label><input type="radio" name="alignment" value="left" checked><span>Left</span></label><label><input type="radio" name="alignment" value="center"><span>Center</span></label><label><input type="radio" name="alignment" value="right"><span>Right</span></label></fieldset>
+          <label class="flip-all-control"><input id="flip-all" type="checkbox"><span><strong>Flip all</strong><small>Rotate every drum on each send</small></span></label>
+        </div>
+        <p id="display-count-warning" class="notice" hidden>Configured drum count exceeds the detected hardware capacity.</p>
+      </div>
+    </section>
+    <section id="page-config" class="page-panel" role="tabpanel" aria-labelledby="tab-config" hidden>
+      <div class="heading"><div><p class="eyebrow">HARDWARE / 02</p><h1>Config</h1></div><button id="request-state" disabled>Refresh status</button></div>
+      <div class="config-setting"><label for="display-count">Drums in this display</label><input id="display-count" type="number" min="1" max="255" value="10"><span>Detected hardware capacity: <strong id="hardware-count">--</strong></span></div>
+      <p id="config-count-warning" class="notice" hidden>Configured drum count exceeds the detected hardware capacity. Display commands are disabled.</p>
+      <div class="config-layout">
+        <section class="hardware-section"><div class="section-title"><div><p class="eyebrow">HARDWARE</p><h2>Drums</h2></div></div>
+          <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all drums" disabled></th><th>DRUM</th><th>FLAP</th><th>STATE</th><th>MOTION</th><th>SENSOR</th><th>MISSED</th><th>UNEXPECTED</th><th>OFFSET (STEPS)</th></tr></thead><tbody id="modules"><tr><td colspan="9" class="empty">Connect a device to see drum status.</td></tr></tbody></table></div>
+        </section>
+        <aside class="side-column"><div class="section-title"><div><p class="eyebrow">MAINTENANCE</p><h2>Calibration</h2></div></div>
+          <div class="selection-line"><span>Selected drums</span><strong id="selection-count">0</strong></div>
+          <button id="home" class="wide" disabled>Re-home selected</button>
+          <div class="rule"></div><p class="control-label">ADJUST OFFSET</p>
+          <div class="offset-grid"><button id="offset-tenth" disabled>+ 1/10 flap</button><button id="offset-half" disabled>+ 1/2 flap</button></div>
+          <button id="offset-set" class="wide secondary" disabled>Set to current position</button>
+          <div class="rule"></div><button id="save-offsets" class="wide" disabled>Save all offsets</button>
+          <p id="save-status" class="help">Offsets are saved only while all drums are stopped.</p>
+        </aside>
+      </div>
+    </section>
+    <section id="page-connection" class="page-panel" role="tabpanel" aria-labelledby="tab-connection" hidden>
+      <div class="heading"><div><p class="eyebrow">DEVICE / 03</p><h1>Connection</h1></div></div>
+      <div class="connection-settings"><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div><label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label></div>
+        <section class="overview" aria-label="Connection status"><div><span class="metric-label">MODULES</span><strong id="module-count">--</strong></div><div><span class="metric-label">LOOPBACK</span><strong id="loopback">--</strong></div><div><span class="metric-label">LAST UPDATE</span><strong id="last-update">--</strong></div><div><span class="metric-label">FIRMWARE</span><strong id="firmware">--</strong></div></section>
+      </div>
+    </section>
+    <section class="activity" aria-label="Diagnostics">
+      <div class="section-title"><div><p class="eyebrow">DIAGNOSTICS</p><h2>Drum status</h2></div><span id="diagnostic-count" class="muted">10 drums</span></div>
+      <div id="diagnostic-drums" class="diagnostic-drums" role="list" aria-label="Drum status"></div>
+      <div class="section-title activity-title"><div><p class="eyebrow">ACTIVITY</p><h2>Logs</h2></div></div>
+      <div class="activity-grid"><div><h3>Commands</h3><ul id="operations"><li class="empty">No commands yet.</li></ul></div><div><h3>Device log</h3><ul id="logs"><li class="empty">No messages yet.</li></ul></div></div>
+    </section>
   </main>
 </body>
 </html>

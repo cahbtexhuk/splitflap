@@ -1,6 +1,9 @@
 import copy
+import json
+import os
 import secrets
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -20,6 +23,15 @@ class ServiceError(Exception):
     pass
 
 
+def default_settings_path():
+    appdata = os.environ.get('APPDATA')
+    if appdata:
+        return Path(appdata) / 'SplitflapWebController' / 'settings.json'
+    config_home = os.environ.get('XDG_CONFIG_HOME')
+    root = Path(config_home) if config_home else Path.home() / '.config'
+    return root / 'splitflap-webapp' / 'settings.json'
+
+
 def open_serial(port, baudrate, timeout, write_timeout):
     connection = serial.Serial(port=None, baudrate=baudrate, timeout=timeout, write_timeout=write_timeout)
     connection.dtr = False
@@ -37,8 +49,12 @@ class SerialService:
     SAVE_TIMEOUT = 10.0
     MAX_FRAME = 16384
 
-    def __init__(self, serial_factory=open_serial):
+    DEFAULT_SETTINGS = {'display_count': 10, 'alignment': 'left', 'flip_all': False}
+
+    def __init__(self, serial_factory=open_serial, settings_path=None):
         self._serial_factory = serial_factory
+        self._settings_path = Path(settings_path) if settings_path else default_settings_path()
+        self._settings = self._load_settings()
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None
@@ -50,14 +66,74 @@ class SerialService:
         self._save_id = None
         self._save_deadline = None
         self._state_time = None
+        self._display_targets = None
         self._snapshot = self._empty_snapshot()
+        self._snapshot['settings'] = copy.deepcopy(self._settings)
+
+    def _load_settings(self):
+        settings = dict(self.DEFAULT_SETTINGS)
+        try:
+            stored = json.loads(self._settings_path.read_text(encoding='utf-8'))
+            if isinstance(stored, dict):
+                count = stored.get('display_count')
+                alignment = stored.get('alignment')
+                flip_all = stored.get('flip_all')
+                if type(count) is int and 1 <= count <= 255:
+                    settings['display_count'] = count
+                if alignment in ('left', 'center', 'right'):
+                    settings['alignment'] = alignment
+                if type(flip_all) is bool:
+                    settings['flip_all'] = flip_all
+        except (OSError, ValueError, TypeError):
+            pass
+        return settings
+
+    def get_settings(self):
+        with self._lock:
+            return copy.deepcopy(self._settings)
+
+    def update_settings(self, updates):
+        if not isinstance(updates, dict) or not updates:
+            raise ServiceError('Expected at least one setting')
+        allowed = set(self.DEFAULT_SETTINGS)
+        if set(updates) - allowed:
+            raise ServiceError('Unknown setting')
+        with self._lock:
+            settings = {**self._settings, **updates}
+            if type(settings['display_count']) is not int or not 1 <= settings['display_count'] <= 255:
+                raise ServiceError('Drum count must be between 1 and 255')
+            if settings['alignment'] not in ('left', 'center', 'right'):
+                raise ServiceError('Invalid text alignment')
+            if type(settings['flip_all']) is not bool:
+                raise ServiceError('Flip-all must be true or false')
+            if (self._snapshot['connection'] == 'ready'
+                    and settings['display_count'] > len(self._snapshot['modules'])):
+                raise ServiceError('Configured drum count exceeds detected hardware capacity')
+            temporary_path = None
+            try:
+                self._settings_path.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self._settings_path.parent,
+                                                 delete=False, suffix='.tmp') as settings_file:
+                    json.dump(settings, settings_file)
+                    temporary_path = Path(settings_file.name)
+                os.replace(temporary_path, self._settings_path)
+            except OSError as error:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+                raise ServiceError(f'Could not save settings: {error}') from error
+            old_count = self._settings['display_count']
+            self._settings = settings
+            self._snapshot['settings'] = copy.deepcopy(settings)
+            if old_count != settings['display_count']:
+                self._display_targets = None
+            return copy.deepcopy(settings)
 
     @staticmethod
     def _empty_snapshot():
         return {'connection': 'disconnected', 'port': None, 'error': None,
                 'modules': [], 'loopbacks_ok': None, 'alphabet': None,
                 'protocol_version': None, 'build': None, 'uptime_millis': None,
-                'updated_at': None, 'logs': [], 'operations': []}
+                'updated_at': None, 'logs': [], 'operations': [], 'settings': None}
 
     def connect(self, port):
         with self._lock:
@@ -73,9 +149,11 @@ class SerialService:
             self._save_id = None
             self._save_deadline = None
             self._state_time = None
+            self._display_targets = None
             self._stop = threading.Event()
             self._snapshot = self._empty_snapshot()
-            self._snapshot.update(connection='connecting', port=port)
+            self._snapshot.update(connection='connecting', port=port,
+                                  settings=copy.deepcopy(self._settings))
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
@@ -141,18 +219,56 @@ class SerialService:
                 raise ServiceError('Text must be a string')
             text = text.upper()
             alphabet = self._snapshot['alphabet']
-            count = len(self._snapshot['modules'])
+            hardware_count = len(self._snapshot['modules'])
+            count = self._settings['display_count']
+            if count > hardware_count:
+                raise ServiceError('Configured drum count exceeds detected hardware capacity')
             if len(text) > count:
                 raise ServiceError('Text is longer than the display')
             unsupported = sorted(set(text) - set(alphabet))
             if unsupported:
                 raise ServiceError('Unsupported characters: ' + ', '.join(unsupported))
-            positions = [alphabet.index(character) for character in text.ljust(count)]
-            return self._module_commands(range(count), pb.SplitflapCommand.ModuleCommand.GO_TO_FLAP,
-                                         positions, 'Display text')
+            available_blanks = count - len(text)
+            if self._settings['alignment'] == 'right':
+                leading_blanks = available_blanks
+            elif self._settings['alignment'] == 'center':
+                leading_blanks = available_blanks // 2
+            else:
+                leading_blanks = 0
+            aligned_text = ' ' * leading_blanks + text + ' ' * (available_blanks - leading_blanks)
+            positions = [alphabet.index(character) for character in aligned_text]
+            modules = self._snapshot['modules']
+            if self._display_targets is None or len(self._display_targets) != hardware_count:
+                self._display_targets = [
+                    module['flap_index'] if module['state'] == 'NORMAL' and not module['moving'] else None
+                    for module in modules
+                ]
+            flip_all = self._settings['flip_all']
+            changed = [index for index, position in enumerate(positions)
+                       if flip_all or self._display_targets[index] != position]
+            if not changed:
+                operation = self._operation('Display message')
+                self._set_operation(operation['id'], 'completed', 'No drum targets changed')
+                return operation['id']
+            message = pb.ToSplitflap()
+            for index in range(hardware_count):
+                command = message.splitflap_command.modules.add()
+                if index in changed:
+                    command.action = pb.SplitflapCommand.ModuleCommand.GO_TO_FLAP
+                    command.param = positions[index]
+            operation_id = self._enqueue(message, 'Display message')
+            for index, position in enumerate(positions):
+                self._display_targets[index] = position
+            return operation_id
 
     def home(self, modules):
-        return self._module_commands(modules, pb.SplitflapCommand.ModuleCommand.RESET_AND_HOME, label='Re-home')
+        modules = list(modules) if isinstance(modules, (list, tuple, range)) else modules
+        operation_id = self._module_commands(modules, pb.SplitflapCommand.ModuleCommand.RESET_AND_HOME, label='Re-home')
+        with self._lock:
+            if self._display_targets is not None:
+                for index in modules:
+                    self._display_targets[index] = None
+        return operation_id
 
     def offset(self, modules, adjustment):
         actions = {'tenth': pb.SplitflapCommand.ModuleCommand.INCREASE_OFFSET_TENTH,
@@ -160,7 +276,14 @@ class SerialService:
                    'set': pb.SplitflapCommand.ModuleCommand.SET_OFFSET}
         if not isinstance(adjustment, str) or adjustment not in actions:
             raise ServiceError('Invalid offset adjustment')
-        return self._module_commands(modules, actions[adjustment], label='Adjust offset')
+        modules = list(modules) if isinstance(modules, (list, tuple, range)) else modules
+        operation_id = self._module_commands(modules, actions[adjustment], label='Adjust offset')
+        if adjustment == 'set':
+            with self._lock:
+                if self._display_targets is not None:
+                    for index in modules:
+                        self._display_targets[index] = None
+        return operation_id
 
     def _module_commands(self, modules, action, positions=None, label='Command'):
         with self._lock:
@@ -255,6 +378,7 @@ class SerialService:
                     self._save_id = None
                 if self._snapshot['connection'] != 'error':
                     self._snapshot['connection'] = 'disconnected'
+                self._display_targets = None
             if self._port:
                 self._port.close()
 
@@ -285,6 +409,11 @@ class SerialService:
                 self._snapshot['loopbacks_ok'] = message.splitflap_state.loopbacks_ok
                 self._state_time = time.monotonic()
                 self._snapshot['updated_at'] = time.time()
+                if self._display_targets is None or len(self._display_targets) != len(self._snapshot['modules']):
+                    self._display_targets = [
+                        module['flap_index'] if module['state'] == 'NORMAL' and not module['moving'] else None
+                        for module in self._snapshot['modules']
+                    ]
             elif kind == 'general_state':
                 state = message.general_state
                 try:

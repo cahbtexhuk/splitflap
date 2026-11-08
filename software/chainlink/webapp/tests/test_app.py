@@ -13,6 +13,9 @@ class AppTests(unittest.TestCase):
         self.app = create_app(self.service)
         self.client = self.app.test_client()
         self.headers = {'X-Splitflap-Request': '1'}
+        self.settings = {'display_count': 10, 'alignment': 'left', 'flip_all': False}
+        self.service.get_settings.return_value = self.settings
+        self.service.update_settings.return_value = self.settings
 
     def test_blocks_untrusted_host_and_origin(self):
         self.assertEqual(self.client.get('/api/status', headers={'Host': 'evil.example'}).status_code, 403)
@@ -33,6 +36,12 @@ class AppTests(unittest.TestCase):
 
     def test_rejects_non_object_request(self):
         self.assertEqual(self.client.post('/api/display', json=['invalid'], headers=self.headers).status_code, 400)
+
+    def test_settings_routes(self):
+        self.assertEqual(self.client.get('/api/settings').get_json()['display_count'], 10)
+        response = self.client.post('/api/settings', json={'flip_all': True}, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.service.update_settings.assert_called_once_with({'flip_all': True})
 
 
 if __name__ == '__main__':
