@@ -139,6 +139,7 @@ class SerialService:
             self._require_ready()
             if not isinstance(text, str):
                 raise ServiceError('Text must be a string')
+            text = text.upper()
             alphabet = self._snapshot['alphabet']
             count = len(self._snapshot['modules'])
             if len(text) > count:

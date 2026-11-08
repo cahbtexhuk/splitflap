@@ -2,6 +2,15 @@ const $ = (id) => document.getElementById(id);
 let state = null;
 let selected = new Set();
 let noticeTimer;
+let availablePorts = [];
+let autoConnectPaused = false;
+let autoConnectInFlight = false;
+let nextAutoConnectAttempt = 0;
+let updating = false;
+const PORT_STORAGE_KEY = 'splitflap.serialPort';
+const AUTO_CONNECT_STORAGE_KEY = 'splitflap.autoConnect';
+
+$('auto-connect').checked = localStorage.getItem(AUTO_CONNECT_STORAGE_KEY) === 'true';
 
 async function api(path, body) {
   const options = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Splitflap-Request': '1'}, body: JSON.stringify(body)};
@@ -22,12 +31,33 @@ async function command(path, body = {}) {
 async function ports() {
   try {
     const available = await api('ports');
-    const previous = $('ports').value;
+    availablePorts = available.map(port => port.device);
+    const previous = $('ports').value || localStorage.getItem(PORT_STORAGE_KEY) || '';
     $('ports').replaceChildren();
     if (!available.length) $('ports').add(new Option('No ports found', ''));
     available.forEach(port => $('ports').add(new Option(`${port.device} - ${port.description}`, port.device)));
-    if (available.some(port => port.device === previous)) $('ports').value = previous;
+    if (previous && !availablePorts.includes(previous)) {
+      $('ports').add(new Option(`${previous} (not detected)`, previous));
+    }
+    if (previous) $('ports').value = previous;
+    renderControls();
   } catch (error) { notify(error.message); }
+}
+async function maybeAutoConnect() {
+  const port = $('ports').value;
+  if (!$('auto-connect').checked || autoConnectPaused || autoConnectInFlight || !port
+      || !availablePorts.includes(port) || !state
+      || !['disconnected', 'error'].includes(state.connection)
+      || Date.now() < nextAutoConnectAttempt) return;
+  autoConnectInFlight = true;
+  nextAutoConnectAttempt = Date.now() + 3000;
+  try {
+    await api('connect', {port});
+  } catch (error) {
+    $('connection-label').textContent = 'Reconnect pending';
+  } finally {
+    autoConnectInFlight = false;
+  }
 }
 function cell(row, text, className = '') {
   const item = row.insertCell();
@@ -73,7 +103,7 @@ function renderControls() {
   const ready = state && state.connection === 'ready' && !state.stale;
   const connected = state && ['connecting', 'ready'].includes(state.connection);
   $('connect').hidden = connected; $('disconnect').hidden = !connected;
-  $('connect').disabled = connected || !$('ports').value;
+  $('connect').disabled = connected || !availablePorts.includes($('ports').value);
   $('ports').disabled = connected; $('refresh-ports').disabled = connected;
   ['message', 'send', 'clear', 'request-state'].forEach(id => { $(id).disabled = !ready; });
   ['home', 'offset-tenth', 'offset-half', 'offset-set'].forEach(id => { $(id).disabled = !ready || !selected.size || state.busy; });
@@ -85,6 +115,8 @@ function renderControls() {
   $('character-count').textContent = `${$('message').value.length} / ${state.modules.length || '--'}`;
 }
 async function update() {
+  if (updating) return;
+  updating = true;
   try {
     state = await api('status');
     $('firmware-warning').hidden = state.connection !== 'ready';
@@ -102,19 +134,49 @@ async function update() {
     renderList('logs', state.logs, (item, entry) => { item.textContent = `${new Date(entry.time * 1000).toLocaleTimeString()}  ${entry.message}`; });
     const lastSave = [...state.operations].reverse().find(item => item.label === 'Save offsets');
     $('save-status').textContent = lastSave ? `Save: ${lastSave.status}${lastSave.detail ? ' - ' + lastSave.detail : ''}` : 'Offsets are saved only while all drums are stopped.';
+    await maybeAutoConnect();
   } catch (error) { $('connection-label').textContent = 'Server unavailable'; $('connection-dot').className = 'dot error'; notify(error.message); }
+  finally { updating = false; }
 }
 $('refresh-ports').addEventListener('click', ports);
-$('ports').addEventListener('change', renderControls);
-$('connect').addEventListener('click', () => command('connect', {port: $('ports').value}));
-$('disconnect').addEventListener('click', async () => { await command('disconnect'); selected.clear(); await ports(); });
-$('message-form').addEventListener('submit', event => { event.preventDefault(); command('display', {text: $('message').value}); });
-$('message').addEventListener('input', renderControls);
+$('ports').addEventListener('change', () => {
+  const port = $('ports').value;
+  if (port) localStorage.setItem(PORT_STORAGE_KEY, port);
+  else localStorage.removeItem(PORT_STORAGE_KEY);
+  autoConnectPaused = false;
+  renderControls();
+});
+$('auto-connect').addEventListener('change', event => {
+  localStorage.setItem(AUTO_CONNECT_STORAGE_KEY, String(event.currentTarget.checked));
+  if (event.currentTarget.checked) autoConnectPaused = false;
+  renderControls();
+  maybeAutoConnect();
+});
+$('connect').addEventListener('click', () => {
+  autoConnectPaused = false;
+  if ($('ports').value) localStorage.setItem(PORT_STORAGE_KEY, $('ports').value);
+  command('connect', {port: $('ports').value});
+});
+$('disconnect').addEventListener('click', async () => {
+  autoConnectPaused = true;
+  await command('disconnect');
+  selected.clear();
+  await ports();
+});
+$('message-form').addEventListener('submit', event => { event.preventDefault(); command('display', {text: $('message').value.toUpperCase()}); });
+$('message').addEventListener('input', event => {
+  const input = event.currentTarget;
+  const cursor = input.selectionStart;
+  input.value = input.value.toUpperCase();
+  input.setSelectionRange(cursor, cursor);
+  renderControls();
+});
 $('clear').addEventListener('click', () => command('clear'));
 $('request-state').addEventListener('click', () => command('state/request'));
 $('select-all').addEventListener('change', event => { selected = new Set(event.target.checked ? state.modules.map(module => module.index) : []); renderModules(); renderControls(); });
-$('home').addEventListener('click', () => { if (confirm('Re-home selected drums? This clears their error counters.')) command('home', {modules: [...selected]}); });
-for (const adjustment of ['tenth', 'half', 'set']) $('offset-' + adjustment).addEventListener('click', () => { if (adjustment !== 'set' || confirm('Set the selected drums\' offset to their current position?')) command('offset', {modules: [...selected], adjustment}); });
-$('save-offsets').addEventListener('click', () => { if (confirm('Save offsets for all drums, including any with errors?')) command('offset/save'); });
+$('home').addEventListener('click', () => command('home', {modules: [...selected]}));
+for (const adjustment of ['tenth', 'half', 'set']) $('offset-' + adjustment).addEventListener('click', () => command('offset', {modules: [...selected], adjustment}));
+$('save-offsets').addEventListener('click', () => command('offset/save'));
 ports().then(update);
 setInterval(update, 1000);
+setInterval(ports, 3000);

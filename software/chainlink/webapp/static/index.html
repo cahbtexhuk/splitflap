@@ -13,7 +13,7 @@
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Disconnected</span></div>
   </header>
   <main>
-    <div class="heading"><div><p class="eyebrow">DEVICE CONTROL / 01</p><h1>Display console</h1></div><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div></div></div>
+    <div class="heading"><div><p class="eyebrow">DEVICE CONTROL / 01</p><h1>Display console</h1></div><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div><label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label></div></div>
     <div id="notice" class="notice" role="status" hidden></div>
     <div id="firmware-warning" class="notice" hidden>Older firmware may report default drum values after connection. Confirm the firmware includes the serial state-reporting fix.</div>
     <section class="overview" aria-label="Display status">

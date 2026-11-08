@@ -79,7 +79,7 @@ class SerialServiceTests(unittest.TestCase):
             time.sleep(0.01)
 
     def test_text_pads_and_rejects_unsupported_characters(self):
-        self.service.display('B')
+        self.service.display('b')
         self.wait_for(lambda: len(self.device.commands) >= 2)
         commands = self.device.commands[-1].splitflap_command.modules
         self.assertEqual([command.param for command in commands], [2, 0])
