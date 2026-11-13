@@ -36,7 +36,7 @@ class Task {
         }
 
         void begin() {
-            BaseType_t result = xTaskCreatePinnedToCore(taskFunction, name, stackDepth, this, priority, &taskHandle, coreId);
+            BaseType_t result = xTaskCreatePinnedToCore(taskFunction, name, stackDepth, static_cast<T*>(this), priority, &taskHandle, coreId);
             assert("Failed to create task" && result == pdPASS);
         }
 

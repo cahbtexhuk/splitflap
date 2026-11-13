@@ -11,8 +11,29 @@ let nextAutoConnectAttempt = 0;
 let updating = false;
 const PORT_STORAGE_KEY = 'splitflap.serialPort';
 const AUTO_CONNECT_STORAGE_KEY = 'splitflap.autoConnect';
+const TRANSPORT_STORAGE_KEY = 'splitflap.transport';
+const HOST_STORAGE_KEY = 'splitflap.networkHost';
+const NETWORK_PORT_STORAGE_KEY = 'splitflap.networkPort';
 
 $('auto-connect').checked = localStorage.getItem(AUTO_CONNECT_STORAGE_KEY) === 'true';
+$('network-host').value = localStorage.getItem(HOST_STORAGE_KEY) || '';
+$('network-port').value = localStorage.getItem(NETWORK_PORT_STORAGE_KEY) || '23040';
+const savedTransport = localStorage.getItem(TRANSPORT_STORAGE_KEY);
+if (savedTransport === 'network') document.querySelector('input[name="transport"][value="network"]').checked = true;
+
+function connectionType() {
+  return document.querySelector('input[name="transport"]:checked').value;
+}
+function connectionRequest() {
+  if (connectionType() === 'serial') {
+    const port = $('ports').value;
+    return availablePorts.includes(port) ? {transport: 'serial', port} : null;
+  }
+  const host = $('network-host').value.trim();
+  const networkPort = Number($('network-port').value);
+  return host && Number.isInteger(networkPort) && networkPort >= 1 && networkPort <= 65535
+    ? {transport: 'network', host, network_port: networkPort} : null;
+}
 
 async function api(path, body) {
   const options = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Splitflap-Request': '1'}, body: JSON.stringify(body)};
@@ -75,19 +96,21 @@ async function ports() {
   } catch (error) { notify(error.message); }
 }
 async function maybeAutoConnect() {
-  const port = $('ports').value;
-  if (!$('auto-connect').checked || autoConnectPaused || autoConnectInFlight || !port
-      || !availablePorts.includes(port) || !state
+  const endpoint = connectionRequest();
+  if (!$('auto-connect').checked || autoConnectPaused || autoConnectInFlight || !endpoint || !state
       || !['disconnected', 'error'].includes(state.connection)
+      || (connectionType() === 'network' && [ $('network-host'), $('network-port') ].includes(document.activeElement))
       || Date.now() < nextAutoConnectAttempt) return;
   autoConnectInFlight = true;
   nextAutoConnectAttempt = Date.now() + 3000;
+    renderControls();
   try {
-    await api('connect', {port});
+    await api('connect', endpoint);
   } catch (error) {
     $('connection-label').textContent = 'Reconnect pending';
   } finally {
     autoConnectInFlight = false;
+    renderControls();
   }
 }
 function cell(row, text, className = '') {
@@ -128,7 +151,7 @@ function renderModules() {
 function renderDiagnosticDrums() {
   const grid = $('diagnostic-drums');
   const count = settings.display_count;
-  const modules = state ? state.modules : [];
+  const modules = state && state.connection === 'ready' && !state.stale ? state.modules : [];
   $('diagnostic-count').textContent = `${count} configured`;
   grid.replaceChildren();
   for (let index = 0; index < count; index++) {
@@ -173,9 +196,21 @@ function renderControls() {
   const countValid = settings.display_count <= state.modules.length;
   const canDisplay = ready && countValid;
   const connected = state && ['connecting', 'ready'].includes(state.connection);
+  if (connected && ['serial', 'network'].includes(state.transport)) {
+    document.querySelector(`input[name="transport"][value="${state.transport}"]`).checked = true;
+    if (state.transport === 'network') {
+      $('network-host').value = state.host;
+      $('network-port').value = state.network_port;
+    }
+  }
+  const network = connectionType() === 'network';
+  $('serial-endpoint').hidden = network;
+  $('network-endpoint').hidden = !network;
   $('connect').hidden = connected; $('disconnect').hidden = !connected;
-  $('connect').disabled = connected || !availablePorts.includes($('ports').value);
-  $('ports').disabled = connected; $('refresh-ports').disabled = connected;
+  $('connect').disabled = connected || autoConnectInFlight || !connectionRequest();
+  $('ports').disabled = connected || autoConnectInFlight; $('refresh-ports').disabled = connected || autoConnectInFlight;
+  $('network-host').disabled = connected || autoConnectInFlight; $('network-port').disabled = connected || autoConnectInFlight;
+  document.querySelectorAll('input[name="transport"]').forEach(input => { input.disabled = connected || autoConnectInFlight; });
   ['message', 'send', 'clear'].forEach(id => { $(id).disabled = !canDisplay; });
   $('request-state').disabled = !ready;
   ['home', 'offset-tenth', 'offset-half', 'offset-set'].forEach(id => { $(id).disabled = !ready || !selected.size || state.busy; });
@@ -201,7 +236,7 @@ async function update() {
     $('firmware-warning').hidden = state.connection !== 'ready';
     $('connection-label').textContent = state.stale && state.connection === 'ready' ? 'Status stale' : state.connection.charAt(0).toUpperCase() + state.connection.slice(1);
     $('connection-dot').className = 'dot ' + (state.stale && state.connection === 'ready' ? 'error' : state.connection);
-    $('port-name').textContent = state.port || 'Not connected';
+    $('port-name').textContent = state.transport === 'network' ? `${state.host}:${state.network_port}` : (state.port || 'Not connected');
     $('module-count').textContent = state.modules.length || '--';
     $('loopback').textContent = state.loopbacks_ok === null ? '--' : state.loopbacks_ok ? 'OK' : 'Fault';
     $('last-update').textContent = state.updated_at ? new Date(state.updated_at * 1000).toLocaleTimeString() : '--';
@@ -229,6 +264,18 @@ $('ports').addEventListener('change', () => {
   autoConnectPaused = false;
   renderControls();
 });
+document.querySelectorAll('input[name="transport"]').forEach(input => input.addEventListener('change', () => {
+  localStorage.setItem(TRANSPORT_STORAGE_KEY, connectionType());
+  autoConnectPaused = false;
+  nextAutoConnectAttempt = 0;
+  renderControls();
+}));
+for (const [id, key] of [['network-host', HOST_STORAGE_KEY], ['network-port', NETWORK_PORT_STORAGE_KEY]]) {
+  $(id).addEventListener('input', () => {
+    localStorage.setItem(key, $(id).value);
+    renderControls();
+  });
+}
 $('auto-connect').addEventListener('change', event => {
   localStorage.setItem(AUTO_CONNECT_STORAGE_KEY, String(event.currentTarget.checked));
   if (event.currentTarget.checked) autoConnectPaused = false;
@@ -250,10 +297,21 @@ document.querySelectorAll('input[name="alignment"]').forEach(input => {
     if (event.currentTarget.checked) saveSettings({alignment: event.currentTarget.value});
   });
 });
-$('connect').addEventListener('click', () => {
+$('connect').addEventListener('click', async () => {
   autoConnectPaused = false;
   if ($('ports').value) localStorage.setItem(PORT_STORAGE_KEY, $('ports').value);
-  command('connect', {port: $('ports').value});
+  const endpoint = connectionRequest();
+  if (!endpoint || autoConnectInFlight) return;
+  autoConnectInFlight = true;
+  renderControls();
+  try {
+    await api('connect', endpoint);
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    autoConnectInFlight = false;
+    await update();
+  }
 });
 $('disconnect').addEventListener('click', async () => {
   autoConnectPaused = true;

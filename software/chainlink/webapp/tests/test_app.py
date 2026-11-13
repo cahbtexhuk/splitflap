@@ -28,6 +28,16 @@ class AppTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/connect', json={'port': 'COM3'}, headers=self.headers).status_code, 200)
         self.service.connect.assert_called_once_with('COM3')
 
+    def test_network_connect_validates_endpoint(self):
+        for host, port in [('http://example.com', 23040), ('', 23040), ('localhost', 0), ('localhost', True)]:
+            response = self.client.post('/api/connect', json={'transport': 'network', 'host': host,
+                                                               'network_port': port}, headers=self.headers)
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post('/api/connect', json={'transport': 'network', 'host': 'splitflap.local',
+                                                           'network_port': 23040}, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.service.connect_network.assert_called_once_with('splitflap.local', 23040)
+
     def test_clear_is_blank_text(self):
         self.service.display.return_value = 1
         response = self.client.post('/api/clear', json={}, headers=self.headers)

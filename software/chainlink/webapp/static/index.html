@@ -53,7 +53,13 @@
     </section>
     <section id="page-connection" class="page-panel" role="tabpanel" aria-labelledby="tab-connection" hidden>
       <div class="heading"><div><p class="eyebrow">DEVICE / 03</p><h1>Connection</h1></div></div>
-      <div class="connection-settings"><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div><label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label></div>
+      <div class="connection-settings"><div class="port-control">
+        <fieldset class="transport-control"><legend>Connection type</legend><label><input type="radio" name="transport" value="serial" checked><span>Serial</span></label><label><input type="radio" name="transport" value="network"><span>IP / hostname</span></label></fieldset>
+        <div id="serial-endpoint"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button></div></div>
+        <div id="network-endpoint" hidden><label for="network-host">IP address or hostname</label><div class="port-actions"><input id="network-host" placeholder="splitflap-xxxxxx.local" autocomplete="off"><label class="sr-only" for="network-port">TCP port</label><input id="network-port" type="number" min="1" max="65535" value="23040" title="TCP port"></div></div>
+        <div class="connect-actions"><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div>
+        <label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label>
+      </div>
         <section class="overview" aria-label="Connection status"><div><span class="metric-label">MODULES</span><strong id="module-count">--</strong></div><div><span class="metric-label">LOOPBACK</span><strong id="loopback">--</strong></div><div><span class="metric-label">LAST UPDATE</span><strong id="last-update">--</strong></div><div><span class="metric-label">FIRMWARE</span><strong id="firmware">--</strong></div></section>
       </div>
     </section>

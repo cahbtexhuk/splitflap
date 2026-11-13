@@ -1,0 +1,5 @@
+#pragma once
+
+#define SPLITFLAP_SETUP_AP_NAME "Splitflap-Setup"
+#define SPLITFLAP_SETUP_AP_PASSWORD ""
+#define SPLITFLAP_TCP_PORT 23040

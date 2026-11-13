@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import secrets
+import socket
 import sys
 import tempfile
 import threading
@@ -39,6 +40,39 @@ def open_serial(port, baudrate, timeout, write_timeout):
     connection.port = port
     connection.open()
     return connection
+
+
+class SocketTransport:
+    def __init__(self, connection, timeout, write_timeout):
+        self._connection = connection
+        self._timeout = timeout
+        self._write_timeout = write_timeout
+        self._connection.settimeout(timeout)
+
+    def read(self, size):
+        try:
+            data = self._connection.recv(size)
+        except socket.timeout:
+            return b''
+        if not data:
+            raise ConnectionError('Network connection closed')
+        return data
+
+    def write(self, data):
+        self._connection.settimeout(self._write_timeout)
+        try:
+            self._connection.sendall(data)
+        finally:
+            self._connection.settimeout(self._timeout)
+        return len(data)
+
+    def close(self):
+        self._connection.close()
+
+
+def open_network(host, port, timeout=0.05, write_timeout=1):
+    connection = socket.create_connection((host, port), timeout=5)
+    return SocketTransport(connection, timeout, write_timeout)
 
 
 class SerialService:
@@ -131,16 +165,25 @@ class SerialService:
     @staticmethod
     def _empty_snapshot():
         return {'connection': 'disconnected', 'port': None, 'error': None,
+                'transport': None, 'host': None, 'network_port': None,
                 'modules': [], 'loopbacks_ok': None, 'alphabet': None,
                 'protocol_version': None, 'build': None, 'uptime_millis': None,
                 'updated_at': None, 'logs': [], 'operations': [], 'settings': None}
 
     def connect(self, port):
+        self._connect(lambda: self._serial_factory(port, self.BAUD, timeout=0.05, write_timeout=1),
+                      port=port, transport='serial')
+
+    def connect_network(self, host, port):
+        self._connect(lambda: open_network(host, port), transport='network',
+                      host=host, network_port=port)
+
+    def _connect(self, factory, **endpoint):
         with self._lock:
             if self._thread and self._thread.is_alive():
                 raise ServiceError('Already connected or connecting')
             try:
-                connection = self._serial_factory(port, self.BAUD, timeout=0.05, write_timeout=1)
+                connection = factory()
             except (serial.SerialException, OSError) as error:
                 raise ServiceError(str(error)) from error
             self._port = connection
@@ -152,8 +195,7 @@ class SerialService:
             self._display_targets = None
             self._stop = threading.Event()
             self._snapshot = self._empty_snapshot()
-            self._snapshot.update(connection='connecting', port=port,
-                                  settings=copy.deepcopy(self._settings))
+            self._snapshot.update(connection='connecting', settings=copy.deepcopy(self._settings), **endpoint)
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
@@ -330,6 +372,9 @@ class SerialService:
                 with self._lock:
                     if self._snapshot['connection'] == 'connecting' and now - started > self.ACK_TIMEOUT + 3:
                         raise ServiceError('Timed out waiting for compatible device status')
+                    if (self._snapshot['transport'] == 'network' and self._snapshot['connection'] == 'ready'
+                            and self._state_time is not None and now - self._state_time > self.STATE_TIMEOUT + 5):
+                        raise ServiceError('Network device status timed out')
                     if self._save_id is not None and now > self._save_deadline:
                         self._set_operation(self._save_id, 'unknown', 'No save confirmation received')
                         self._save_id = None

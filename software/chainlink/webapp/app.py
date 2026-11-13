@@ -1,5 +1,7 @@
 import argparse
 import atexit
+import ipaddress
+import re
 from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -65,10 +67,27 @@ def create_app(service=None, allowed_hosts=None):
     @app.post('/api/connect')
     def connect():
         data = body()
-        port = data.get('port')
-        if not isinstance(port, str) or port not in {item.device for item in list_ports.comports()}:
-            raise ServiceError('Select an available serial port')
-        controller.connect(port)
+        transport = data.get('transport', 'serial')
+        if transport == 'serial':
+            port = data.get('port')
+            if not isinstance(port, str) or port not in {item.device for item in list_ports.comports()}:
+                raise ServiceError('Select an available serial port')
+            controller.connect(port)
+        elif transport == 'network':
+            host = data.get('host')
+            port = data.get('network_port')
+            if not isinstance(host, str) or not host or len(host) > 253:
+                raise ServiceError('Enter an IP address or hostname')
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', host):
+                    raise ServiceError('Enter an IP address or hostname without a URL scheme')
+            if type(port) is not int or not 1 <= port <= 65535:
+                raise ServiceError('Network port must be between 1 and 65535')
+            controller.connect_network(host, port)
+        else:
+            raise ServiceError('Invalid connection type')
         return jsonify(ok=True)
 
     @app.post('/api/disconnect')

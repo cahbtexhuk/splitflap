@@ -1,5 +1,7 @@
 import sys
+import socket
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -7,7 +9,7 @@ from queue import Empty, Queue
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from protocol import decode_frame, encode_frame
-from serial_service import SerialService, ServiceError, pb
+from serial_service import SerialService, ServiceError, SocketTransport, pb
 
 
 class FakeSerial:
@@ -195,6 +197,102 @@ class SerialServiceTests(unittest.TestCase):
         self.service.display('A')
         self.wait_for(lambda: self.service.snapshot()['connection'] == 'error')
         self.assertEqual(self.service.snapshot()['operations'][-1]['status'], 'unknown')
+
+    def test_socket_timeout_and_eof_are_distinct(self):
+        local_socket, remote_socket = socket.socketpair()
+        transport = SocketTransport(local_socket, 0.01, 1)
+        self.addCleanup(transport.close)
+        self.addCleanup(remote_socket.close)
+        self.assertEqual(transport.read(10), b'')
+        remote_socket.sendall(b'hello')
+        self.assertEqual(transport.read(10), b'hello')
+        self.assertEqual(transport.write(b'world'), 5)
+        self.assertEqual(remote_socket.recv(10), b'world')
+        remote_socket.close()
+        with self.assertRaises(ConnectionError):
+            transport.read(10)
+
+    def test_network_connection_reuses_protocol_and_handles_eof(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        self.addCleanup(listener.close)
+        accepted = Queue()
+        received = Queue()
+
+        def fake_network_device():
+            buffer = bytearray()
+            try:
+                remote_socket, _ = listener.accept()
+                accepted.put(remote_socket)
+                while True:
+                    data = remote_socket.recv(256)
+                    if not data:
+                        break
+                    for byte in data:
+                        if byte:
+                            buffer.append(byte)
+                        elif buffer:
+                            message = pb.ToSplitflap()
+                            message.ParseFromString(decode_frame(bytes(buffer)))
+                            buffer.clear()
+                            received.put(message)
+                            ack = pb.FromSplitflap()
+                            ack.ack.nonce = message.nonce
+                            frame = encode_frame(ack.SerializeToString())
+                            remote_socket.sendall(frame[:2])
+                            remote_socket.sendall(frame[2:])
+                            if (message.WhichOneof('payload') == 'splitflap_command'
+                                    and message.splitflap_command.save_all_offsets):
+                                log = pb.FromSplitflap()
+                                log.log.msg = 'SUCCESS - saved calibration!'
+                                remote_socket.sendall(encode_frame(log.SerializeToString()))
+                            if message.WhichOneof('payload') == 'request_state':
+                                status = pb.FromSplitflap()
+                                status.splitflap_state.modules.add()
+                                status.splitflap_state.modules.add()
+                                status.splitflap_state.loopbacks_ok = True
+                                general = pb.FromSplitflap()
+                                general.general_state.serial_protocol_version = 1
+                                general.general_state.flap_character_set = b' AB'
+                                remote_socket.sendall(encode_frame(status.SerializeToString())
+                                                      + encode_frame(general.SerializeToString()))
+            except OSError:
+                pass
+
+        worker = threading.Thread(target=fake_network_device, daemon=True)
+        worker.start()
+        service = SerialService(settings_path=Path(self.settings_dir.name) / 'network.json')
+        service.update_settings({'display_count': 2})
+        self.addCleanup(service.disconnect)
+        service.connect_network('localhost', listener.getsockname()[1])
+        remote_socket = accepted.get(timeout=2)
+        self.addCleanup(remote_socket.close)
+        self.wait_for(lambda: service.snapshot()['connection'] == 'ready')
+        self.assertEqual(service.snapshot()['transport'], 'network')
+        service.display('B')
+        self.wait_for(lambda: received.qsize() >= 2)
+        request = received.get_nowait()
+        command = received.get_nowait()
+        self.assertEqual(request.WhichOneof('payload'), 'request_state')
+        self.assertEqual(command.splitflap_command.modules[0].param, 2)
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        service.home([1])
+        service.offset([0], 'half')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        home = received.get(timeout=2)
+        offset = received.get(timeout=2)
+        self.assertEqual(home.splitflap_command.modules[1].action,
+                 pb.SplitflapCommand.ModuleCommand.RESET_AND_HOME)
+        self.assertEqual(offset.splitflap_command.modules[0].action,
+                 pb.SplitflapCommand.ModuleCommand.INCREASE_OFFSET_HALF)
+        service.save_offsets()
+        self.wait_for(lambda: service.snapshot()['operations'][-1]['status'] == 'completed')
+        self.assertTrue(received.get(timeout=2).splitflap_command.save_all_offsets)
+        remote_socket.shutdown(socket.SHUT_RDWR)
+        remote_socket.close()
+        self.wait_for(lambda: service.snapshot()['connection'] == 'error')
+        self.assertIn('closed', service.snapshot()['error'])
 
     def test_save_requires_log_confirmation(self):
         self.wait_for(lambda: not self.service.snapshot()['busy'])

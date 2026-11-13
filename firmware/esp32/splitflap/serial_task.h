@@ -23,6 +23,9 @@
 
 #include "serial_legacy_json_protocol.h"
 #include "serial_proto_protocol.h"
+#if SPLITFLAP_WIFI
+#include "wifi_transport.h"
+#endif
 
 class SerialTask : public Task<SerialTask>, public Logger {
     friend class Task<SerialTask>; // Allow base Task to invoke protected run()
@@ -42,6 +45,10 @@ class SerialTask : public Task<SerialTask>, public Logger {
         SplitflapTask& splitflap_task_;
         UartStream stream_;
 
+    #if SPLITFLAP_WIFI
+        WifiTransport wifi_transport_;
+        ProtocolStream proto_stream_;
+    #endif
         SerialLegacyJsonProtocol legacy_protocol_;
         SerialProtoProtocol proto_protocol_;
 
