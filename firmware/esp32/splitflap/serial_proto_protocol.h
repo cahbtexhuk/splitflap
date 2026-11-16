@@ -43,7 +43,6 @@ class SerialProtoProtocol : public SerialProtocol {
         void sendSupervisorState(PB_SupervisorState& supervisor_state) override;
 
         void init();
-        void resetSession();
     
     private:
         Stream& stream_;
@@ -52,11 +51,9 @@ class SerialProtoProtocol : public SerialProtocol {
 
         uint8_t tx_buffer_[PB_FromSplitflap_size + 4]; // Max message size + CRC32
 
-        using PacketHandler = PacketSerial_<COBS, 0, (PB_ToSplitflap_size + 4) * 2 + 10>;
-        PacketHandler packet_serial_;
+        PacketSerial_<COBS, 0, (PB_ToSplitflap_size + 4) * 2 + 10> packet_serial_;
 
-        uint32_t last_nonce_ = 0;
-        bool last_nonce_valid_ = false;
+        uint32_t last_nonce_;
 
         SplitflapState latest_state_ = {};
         SplitflapState last_sent_state_ = {};
@@ -64,7 +61,7 @@ class SerialProtoProtocol : public SerialProtocol {
 
         uint32_t last_sent_general_state_millis_ = 0;
 
-        bool state_requested_ = false;
+        bool state_requested_;
 
         void sendPbTxBuffer();
         void handlePacket(const uint8_t* buffer, size_t size);
