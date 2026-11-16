@@ -25,3 +25,5 @@ sensor.xml
 .vscode
 .nvmrc
 .python_version
+
+python_app
