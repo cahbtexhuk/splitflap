@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from datetime import datetime, timedelta
 from pathlib import Path
 from queue import Empty, Full, Queue
 
@@ -41,6 +42,15 @@ def open_serial(port, baudrate, timeout, write_timeout):
     return connection
 
 
+def valid_clock_time(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        return datetime.strptime(value, '%H:%M').strftime('%H:%M') == value
+    except ValueError:
+        return False
+
+
 class SerialService:
     BAUD = 230400
     RETRY_INTERVAL = 0.25
@@ -49,12 +59,19 @@ class SerialService:
     SAVE_TIMEOUT = 10.0
     MAX_FRAME = 16384
 
-    DEFAULT_SETTINGS = {'display_count': 10, 'alignment': 'left', 'flip_all': False}
+    DEFAULT_SETTINGS = {
+        'display_count': 10,
+        'alignment': 'left',
+        'flip_all': False,
+        'default_prop_clock_time': '22:00',
+    }
 
     def __init__(self, serial_factory=open_serial, settings_path=None):
         self._serial_factory = serial_factory
         self._settings_path = Path(settings_path) if settings_path else default_settings_path()
         self._settings = self._load_settings()
+        self._clock_start_time = self._settings['default_prop_clock_time']
+        self._clock_current_time = self._settings['default_prop_clock_time']
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None
@@ -84,6 +101,9 @@ class SerialService:
                     settings['alignment'] = alignment
                 if type(flip_all) is bool:
                     settings['flip_all'] = flip_all
+                default_clock_time = stored.get('default_prop_clock_time')
+                if valid_clock_time(default_clock_time):
+                    settings['default_prop_clock_time'] = default_clock_time
         except (OSError, ValueError, TypeError):
             pass
         return settings
@@ -106,6 +126,8 @@ class SerialService:
                 raise ServiceError('Invalid text alignment')
             if type(settings['flip_all']) is not bool:
                 raise ServiceError('Flip-all must be true or false')
+            if not valid_clock_time(settings['default_prop_clock_time']):
+                raise ServiceError('Default prop clock time must use HH:MM')
             if (self._snapshot['connection'] == 'ready'
                     and settings['display_count'] > len(self._snapshot['modules'])):
                 raise ServiceError('Configured drum count exceeds detected hardware capacity')
@@ -212,11 +234,13 @@ class SerialService:
         message.request_state.SetInParent()
         return self._enqueue(message, 'Request status')
 
-    def display(self, text):
+    def display(self, text, alignment=None, label='Display message'):
         with self._lock:
             self._require_ready()
             if not isinstance(text, str):
                 raise ServiceError('Text must be a string')
+            if alignment is not None and alignment not in ('left', 'center', 'right'):
+                raise ServiceError('Invalid text alignment')
             text = text.upper()
             alphabet = self._snapshot['alphabet']
             hardware_count = len(self._snapshot['modules'])
@@ -229,9 +253,10 @@ class SerialService:
             if unsupported:
                 raise ServiceError('Unsupported characters: ' + ', '.join(unsupported))
             available_blanks = count - len(text)
-            if self._settings['alignment'] == 'right':
+            effective_alignment = alignment or self._settings['alignment']
+            if effective_alignment == 'right':
                 leading_blanks = available_blanks
-            elif self._settings['alignment'] == 'center':
+            elif effective_alignment == 'center':
                 leading_blanks = available_blanks // 2
             else:
                 leading_blanks = 0
@@ -247,7 +272,7 @@ class SerialService:
             changed = [index for index, position in enumerate(positions)
                        if flip_all or self._display_targets[index] != position]
             if not changed:
-                operation = self._operation('Display message')
+                operation = self._operation(label)
                 self._set_operation(operation['id'], 'completed', 'No drum targets changed')
                 return operation['id']
             message = pb.ToSplitflap()
@@ -256,10 +281,64 @@ class SerialService:
                 if index in changed:
                     command.action = pb.SplitflapCommand.ModuleCommand.GO_TO_FLAP
                     command.param = positions[index]
-            operation_id = self._enqueue(message, 'Display message')
+            operation_id = self._enqueue(message, label)
             for index, position in enumerate(positions):
                 self._display_targets[index] = position
             return operation_id
+
+    def get_clock_state(self):
+        with self._lock:
+            return {
+                'start_time': self._clock_start_time,
+                'current_time': self._clock_current_time,
+            }
+
+    def _clock_response(self, operation_id):
+        return {
+            'start_time': self._clock_start_time,
+            'current_time': self._clock_current_time,
+            'operation': operation_id,
+        }
+
+    def _queue_clock_time(self, time_text):
+        if self._settings['display_count'] < 5:
+            raise ServiceError('Prop clock requires at least 5 configured drums')
+        return self.display(time_text, alignment='center', label='Prop clock')
+
+    def set_clock_start(self, time_text):
+        if not valid_clock_time(time_text):
+            raise ServiceError('Time must use HH:MM')
+        with self._lock:
+            operation_id = self._queue_clock_time(time_text)
+            self._clock_start_time = time_text
+            self._clock_current_time = time_text
+            return self._clock_response(operation_id)
+
+    def reset_clock(self):
+        with self._lock:
+            operation_id = self._queue_clock_time(self._clock_start_time)
+            self._clock_current_time = self._clock_start_time
+            return self._clock_response(operation_id)
+
+    def add_clock_minutes(self, minutes):
+        if type(minutes) is not int or minutes not in set(range(5, 60, 5)):
+            raise ServiceError('Allowed minute values are 5, 10, 15, ..., 55')
+        with self._lock:
+            current = datetime.strptime(self._clock_current_time, '%H:%M')
+            updated_time = (current + timedelta(minutes=minutes)).strftime('%H:%M')
+            operation_id = self._queue_clock_time(updated_time)
+            self._clock_current_time = updated_time
+            return self._clock_response(operation_id)
+
+    def add_clock_hours(self, hours):
+        if type(hours) is not int or hours not in (1, 2):
+            raise ServiceError('Allowed hour values are 1 or 2')
+        with self._lock:
+            current = datetime.strptime(self._clock_current_time, '%H:%M')
+            updated_time = (current + timedelta(hours=hours)).strftime('%H:%M')
+            operation_id = self._queue_clock_time(updated_time)
+            self._clock_current_time = updated_time
+            return self._clock_response(operation_id)
 
     def home(self, modules):
         modules = list(modules) if isinstance(modules, (list, tuple, range)) else modules

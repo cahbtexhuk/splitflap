@@ -6,7 +6,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from serial.tools import list_ports
 from waitress import serve
 
-from serial_service import SerialService, ServiceError
+from serial_service import SerialService, ServiceError, valid_clock_time
 
 
 def create_app(service=None, allowed_hosts=None):
@@ -58,6 +58,10 @@ def create_app(service=None, allowed_hosts=None):
     def settings():
         return jsonify(controller.get_settings())
 
+    @app.get('/api/clock')
+    def clock_state():
+        return jsonify(controller.get_clock_state())
+
     @app.post('/api/settings')
     def update_settings():
         return jsonify(controller.update_settings(body()))
@@ -88,6 +92,32 @@ def create_app(service=None, allowed_hosts=None):
     @app.post('/api/clear')
     def clear():
         return jsonify(operation=controller.display(''))
+
+    @app.post('/api/clock/set-start')
+    def set_clock_start():
+        time_text = body().get('time')
+        if not valid_clock_time(time_text):
+            raise ServiceError('Time must use HH:MM')
+        return jsonify(controller.set_clock_start(time_text))
+
+    @app.post('/api/clock/reset')
+    def reset_clock():
+        body()
+        return jsonify(controller.reset_clock())
+
+    @app.post('/api/clock/add-minutes')
+    def add_clock_minutes():
+        minutes = body().get('minutes')
+        if type(minutes) is not int or minutes not in set(range(5, 60, 5)):
+            raise ServiceError('Allowed minute values are 5, 10, 15, ..., 55')
+        return jsonify(controller.add_clock_minutes(minutes))
+
+    @app.post('/api/clock/add-hours')
+    def add_clock_hours():
+        hours = body().get('hours')
+        if type(hours) is not int or hours not in (1, 2):
+            raise ServiceError('Allowed hour values are 1 or 2')
+        return jsonify(controller.add_clock_hours(hours))
 
     @app.post('/api/home')
     def home():

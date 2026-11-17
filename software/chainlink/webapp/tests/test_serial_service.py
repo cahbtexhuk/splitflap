@@ -146,7 +146,80 @@ class SerialServiceTests(unittest.TestCase):
         self.assertEqual([item.param for item in commands], [0, 1])
         restored = SerialService(settings_path=self.settings_path)
         self.assertEqual(restored.get_settings(), {
-            'display_count': 2, 'alignment': 'right', 'flip_all': False})
+            'display_count': 2, 'alignment': 'right', 'flip_all': False,
+            'default_prop_clock_time': '22:00'})
+
+    def test_default_prop_clock_time_is_validated_and_persisted(self):
+        self.service.update_settings({'default_prop_clock_time': '23:45'})
+        restored = SerialService(settings_path=self.settings_path)
+        self.assertEqual(restored.get_settings()['default_prop_clock_time'], '23:45')
+        self.assertEqual(restored.get_clock_state(), {'start_time': '23:45', 'current_time': '23:45'})
+        with self.assertRaises(ServiceError):
+            self.service.update_settings({'default_prop_clock_time': '24:00'})
+        with self.assertRaises(ServiceError):
+            self.service.update_settings({'default_prop_clock_time': '8:05'})
+
+    def make_clock_service(self):
+        device = FakeSerial(module_count=10, alphabet=b' 0123456789:')
+        settings_path = Path(self.settings_dir.name) / 'clock-settings.json'
+        service = SerialService(lambda *args, **kwargs: device, settings_path)
+        service.update_settings({'display_count': 10})
+        service.connect('fake-clock')
+        self.addCleanup(service.disconnect)
+        self.wait_for(lambda: service.snapshot()['connection'] == 'ready')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        return service, device
+
+    def test_prop_clock_override_reset_and_centered_output(self):
+        service, device = self.make_clock_service()
+        self.assertEqual(service.get_clock_state(), {'start_time': '22:00', 'current_time': '22:00'})
+
+        result = service.set_clock_start('21:46')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        self.assertEqual(result['current_time'], '21:46')
+        clock_command = device.commands[-1].splitflap_command.modules
+        self.assertEqual([item.param for item in clock_command], [0, 0, 3, 2, 11, 5, 7, 0, 0, 0])
+
+        result = service.add_clock_minutes(5)
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        self.assertEqual(result['current_time'], '21:51')
+        result = service.add_clock_hours(1)
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        self.assertEqual(result['current_time'], '22:51')
+        result = service.reset_clock()
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        self.assertEqual(result['current_time'], '21:46')
+
+    def test_prop_clock_minute_steps_and_midnight_wrap(self):
+        service, _ = self.make_clock_service()
+        result = service.set_clock_start('23:55')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        result = service.add_clock_minutes(10)
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        self.assertEqual(result['current_time'], '00:05')
+
+        for minutes in range(5, 60, 5):
+            result = service.set_clock_start('22:00')
+            self.wait_for(lambda: not service.snapshot()['busy'])
+            result = service.add_clock_minutes(minutes)
+            self.wait_for(lambda: not service.snapshot()['busy'])
+            self.assertEqual(result['current_time'], f'22:{minutes:02d}')
+
+        with self.assertRaises(ServiceError):
+            service.add_clock_minutes(1)
+        with self.assertRaises(ServiceError):
+            service.add_clock_hours(3)
+
+    def test_saved_default_change_does_not_replace_runtime_override(self):
+        service, _ = self.make_clock_service()
+        result = service.set_clock_start('21:46')
+        self.wait_for(lambda: not service.snapshot()['busy'])
+        service.update_settings({'default_prop_clock_time': '23:00'})
+        self.assertEqual(service.get_clock_state(), {'start_time': '21:46', 'current_time': '21:46'})
+
+    def test_prop_clock_requires_five_configured_drums(self):
+        with self.assertRaisesRegex(ServiceError, 'at least 5'):
+            self.service.set_clock_start('22:00')
 
     def test_configured_count_cannot_exceed_connected_hardware(self):
         with self.assertRaises(ServiceError):

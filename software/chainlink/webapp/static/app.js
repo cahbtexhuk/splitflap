@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let state = null;
 let selected = new Set();
-let settings = {display_count: 10, alignment: 'left', flip_all: false};
+let settings = {display_count: 10, alignment: 'left', flip_all: false, default_prop_clock_time: '22:00'};
 let activePage = 'display';
 let noticeTimer;
 let availablePorts = [];
@@ -9,6 +9,7 @@ let autoConnectPaused = false;
 let autoConnectInFlight = false;
 let nextAutoConnectAttempt = 0;
 let updating = false;
+let clockTimeDirty = false;
 const PORT_STORAGE_KEY = 'splitflap.serialPort';
 const AUTO_CONNECT_STORAGE_KEY = 'splitflap.autoConnect';
 
@@ -29,7 +30,7 @@ function notify(message) {
 }
 function showPage(name) {
   activePage = name;
-  for (const page of ['display', 'config', 'connection']) {
+  for (const page of ['display', 'clock', 'config', 'connection']) {
     const active = page === name;
     $(`page-${page}`).hidden = !active;
     $(`tab-${page}`).classList.toggle('active', active);
@@ -39,6 +40,12 @@ function showPage(name) {
 }
 function renderSettings() {
   if (document.activeElement !== $('display-count')) $('display-count').value = settings.display_count;
+  if (document.activeElement !== $('default-prop-clock-time')) {
+    $('default-prop-clock-time').value = settings.default_prop_clock_time;
+  }
+  if (!clockTimeDirty && document.activeElement !== $('clock-time')) {
+    $('clock-time').value = settings.default_prop_clock_time;
+  }
   $('flip-all').checked = settings.flip_all;
   const alignment = document.querySelector(`input[name="alignment"][value="${settings.alignment}"]`);
   if (alignment) alignment.checked = true;
@@ -58,6 +65,24 @@ async function saveSettings(updates) {
 }
 async function command(path, body = {}) {
   try { await api(path, body); await update(); } catch (error) { notify(error.message); }
+}
+function renderClock(clock) {
+  $('clock-start-time').textContent = clock.start_time;
+  $('clock-current-time').textContent = clock.current_time;
+}
+function setClockStatus(message, error = false) {
+  $('clock-status').textContent = message;
+  $('clock-status').classList.toggle('error', error);
+}
+async function clockCommand(path, payload = {}) {
+  try {
+    const result = await api(path, payload);
+    renderClock(result);
+    await update();
+    setClockStatus(`Clock command queued as operation ${result.operation}.`);
+  } catch (error) {
+    setClockStatus(error.message, true);
+  }
 }
 async function ports() {
   try {
@@ -190,12 +215,20 @@ function renderControls() {
   $('config-count-warning').hidden = countValid || !state.modules.length;
   $('flip-all').disabled = !canDisplay;
   document.querySelectorAll('input[name="alignment"]').forEach(input => { input.disabled = !canDisplay; });
+  const canClock = canDisplay && settings.display_count >= 5;
+  $('clock-time').disabled = !canClock;
+  $('clock-set').disabled = !canClock;
+  $('clock-reset').disabled = !canClock;
+  document.querySelectorAll('[data-clock-minutes], [data-clock-hours]').forEach(button => { button.disabled = !canClock; });
+  $('clock-warning').hidden = canClock;
 }
 async function update() {
   if (updating) return;
   updating = true;
   try {
-    state = await api('status');
+    const [nextState, clock] = await Promise.all([api('status'), api('clock')]);
+    state = nextState;
+    renderClock(clock);
     settings = state.settings || settings;
     renderSettings();
     $('firmware-warning').hidden = state.connection !== 'ready';
@@ -220,6 +253,7 @@ async function update() {
 }
 $('refresh-ports').addEventListener('click', ports);
 $('tab-display').addEventListener('click', () => showPage('display'));
+$('tab-clock').addEventListener('click', () => showPage('clock'));
 $('tab-config').addEventListener('click', () => showPage('config'));
 $('tab-connection').addEventListener('click', () => showPage('connection'));
 $('ports').addEventListener('change', () => {
@@ -243,6 +277,27 @@ $('display-count').addEventListener('change', event => {
     return;
   }
   saveSettings({display_count: value});
+});
+$('default-prop-clock-time').addEventListener('change', event => {
+  const value = event.currentTarget.value;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    notify('Default prop clock time must use HH:MM');
+    renderSettings();
+    return;
+  }
+  saveSettings({default_prop_clock_time: value});
+});
+$('clock-time').addEventListener('input', () => { clockTimeDirty = true; });
+$('clock-set-form').addEventListener('submit', event => {
+  event.preventDefault();
+  clockCommand('clock/set-start', {time: $('clock-time').value});
+});
+$('clock-reset').addEventListener('click', () => clockCommand('clock/reset'));
+document.querySelectorAll('[data-clock-minutes]').forEach(button => {
+  button.addEventListener('click', () => clockCommand('clock/add-minutes', {minutes: Number(button.dataset.clockMinutes)}));
+});
+document.querySelectorAll('[data-clock-hours]').forEach(button => {
+  button.addEventListener('click', () => clockCommand('clock/add-hours', {hours: Number(button.dataset.clockHours)}));
 });
 $('flip-all').addEventListener('change', event => saveSettings({flip_all: event.currentTarget.checked}));
 document.querySelectorAll('input[name="alignment"]').forEach(input => {
@@ -275,7 +330,7 @@ $('select-all').addEventListener('change', event => { selected = new Set(event.t
 $('home').addEventListener('click', () => command('home', {modules: [...selected]}));
 for (const adjustment of ['tenth', 'half', 'set']) $('offset-' + adjustment).addEventListener('click', () => command('offset', {modules: [...selected], adjustment}));
 $('save-offsets').addEventListener('click', () => command('offset/save'));
-showPage(['display', 'config', 'connection'].includes(localStorage.getItem('splitflap.activePage'))
+showPage(['display', 'clock', 'config', 'connection'].includes(localStorage.getItem('splitflap.activePage'))
   ? localStorage.getItem('splitflap.activePage') : 'display');
 Promise.all([ports(), api('settings').then(value => { settings = value; renderSettings(); })]).then(update);
 setInterval(update, 1000);

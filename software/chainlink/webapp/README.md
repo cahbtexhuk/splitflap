@@ -55,3 +55,39 @@ The dashboard has **Display Control**, **Config**, and **Connection** pages. Con
 Config's drum count defaults to 10 and is saved as a host setting shared by browser clients. It may be lower than the firmware's detected driver capacity, such as 10 configured drums on a 12-output setup, but cannot exceed it. Extra outputs remain visible in hardware status and are not moved by display messages or included in drum selection.
 
 The controller keeps message targets in memory only for the current serial session. It initializes them from fresh device status after connect and resets its baseline after reconnect or re-homing. No firmware or protocol changes are needed for changed-only movement.
+
+## Prop Clock
+
+The Prop Clock tab sends explicit `HH:MM` targets through the connected serial controller; it does not advance automatically. The configured default time (initially `22:00`) prefills the time entry. **Set time** establishes a temporary runtime start/current time, **Reset to start** returns to that runtime start, and minute/hour buttons add exact time without rounding or persistently changing the default. Runtime state resets to the configured default when the app restarts. Clock output is centered regardless of the Display Control alignment setting.
+
+The clock API can be used by Home Assistant, Stream Deck software, or another REST client on the LAN. For remote access, start the controller with a LAN bind and allowlist the address clients use, for example:
+
+```bash
+python software/chainlink/webapp/app.py --host 0.0.0.0 --allowed-host 192.168.1.50
+```
+
+Replace `192.168.1.50` with the controller's LAN address and use it in the request URL. POST requests require `Content-Type: application/json` and `X-Splitflap-Request: 1`; non-browser clients may omit `Origin`.
+
+```bash
+curl http://192.168.1.50:8765/api/clock
+
+curl -X POST http://192.168.1.50:8765/api/clock/set-start \
+  -H 'Content-Type: application/json' -H 'X-Splitflap-Request: 1' \
+  -d '{"time":"21:46"}'
+
+curl -X POST http://192.168.1.50:8765/api/clock/add-minutes \
+  -H 'Content-Type: application/json' -H 'X-Splitflap-Request: 1' \
+  -d '{"minutes":5}'
+
+curl -X POST http://192.168.1.50:8765/api/clock/add-hours \
+  -H 'Content-Type: application/json' -H 'X-Splitflap-Request: 1' \
+  -d '{"hours":1}'
+
+curl -X POST http://192.168.1.50:8765/api/clock/reset \
+  -H 'Content-Type: application/json' -H 'X-Splitflap-Request: 1' \
+  -d '{}'
+```
+
+`GET /api/clock` returns `start_time` and `current_time`. Mutation responses include those fields and the queued `operation` ID. `/api/clock/add-minutes` accepts 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, or 55; `/api/clock/add-hours` accepts 1 or 2. `/api/clock/set-start` accepts `{"time":"HH:MM"}`. Add-minute/hour routes accept `{"minutes":N}` or `{"hours":N}` respectively; reset accepts `{}`. Set the persistent form default through Config or `POST /api/settings` with `{"default_prop_clock_time":"22:00"}`.
+
+Clock actions require the serial device to be connected, ready, and reporting fresh status. Responses confirm a command was queued, not that drum motion has completed. The LAN service has no login or TLS: restrict it to a trusted network/firewall and do not expose or port-forward it to the internet.

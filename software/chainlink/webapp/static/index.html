@@ -15,6 +15,7 @@
   <main>
     <nav class="page-nav" aria-label="Main navigation" role="tablist">
       <button id="tab-display" class="page-tab active" role="tab" aria-selected="true" aria-controls="page-display">Display Control</button>
+      <button id="tab-clock" class="page-tab" role="tab" aria-selected="false" aria-controls="page-clock">Prop Clock</button>
       <button id="tab-config" class="page-tab" role="tab" aria-selected="false" aria-controls="page-config">Config</button>
       <button id="tab-connection" class="page-tab" role="tab" aria-selected="false" aria-controls="page-connection">Connection</button>
     </nav>
@@ -32,9 +33,50 @@
         <p id="display-count-warning" class="notice" hidden>Configured drum count exceeds the detected hardware capacity.</p>
       </div>
     </section>
+    <section id="page-clock" class="page-panel" role="tabpanel" aria-labelledby="tab-clock" hidden>
+      <div class="heading"><div><p class="eyebrow">TIME CONTROL / 02</p><h1>Prop Clock</h1></div></div>
+      <div class="clock-layout">
+        <section class="clock-readout" aria-label="Clock state">
+          <div><p class="eyebrow">RUNTIME START</p><strong id="clock-start-time" class="clock-time">22:00</strong></div>
+          <div><p class="eyebrow">CURRENT TARGET</p><strong id="clock-current-time" class="clock-time">22:00</strong></div>
+        </section>
+        <div class="clock-controls">
+          <form id="clock-set-form" class="clock-set-form">
+            <label for="clock-time">Set display time</label>
+            <div class="clock-set-actions"><input id="clock-time" type="time" value="22:00" required disabled><button id="clock-set" class="primary" type="submit" disabled>Set time</button><button id="clock-reset" type="button" disabled>Reset to start</button></div>
+          </form>
+          <section class="clock-step-group" aria-labelledby="clock-minutes-heading">
+            <h2 id="clock-minutes-heading">Add minutes</h2>
+            <div class="clock-step-buttons" role="group" aria-label="Add minutes">
+              <button type="button" data-clock-minutes="5" aria-label="Add 5 minutes" disabled>+5m</button>
+              <button type="button" data-clock-minutes="10" aria-label="Add 10 minutes" disabled>+10m</button>
+              <button type="button" data-clock-minutes="15" aria-label="Add 15 minutes" disabled>+15m</button>
+              <button type="button" data-clock-minutes="20" aria-label="Add 20 minutes" disabled>+20m</button>
+              <button type="button" data-clock-minutes="25" aria-label="Add 25 minutes" disabled>+25m</button>
+              <button type="button" data-clock-minutes="30" aria-label="Add 30 minutes" disabled>+30m</button>
+              <button type="button" data-clock-minutes="35" aria-label="Add 35 minutes" disabled>+35m</button>
+              <button type="button" data-clock-minutes="40" aria-label="Add 40 minutes" disabled>+40m</button>
+              <button type="button" data-clock-minutes="45" aria-label="Add 45 minutes" disabled>+45m</button>
+              <button type="button" data-clock-minutes="50" aria-label="Add 50 minutes" disabled>+50m</button>
+              <button type="button" data-clock-minutes="55" aria-label="Add 55 minutes" disabled>+55m</button>
+            </div>
+          </section>
+          <section class="clock-step-group" aria-labelledby="clock-hours-heading">
+            <h2 id="clock-hours-heading">Add hours</h2>
+            <div class="clock-step-buttons" role="group" aria-label="Add hours">
+              <button type="button" data-clock-hours="1" aria-label="Add 1 hour" disabled>+1h</button>
+              <button type="button" data-clock-hours="2" aria-label="Add 2 hours" disabled>+2h</button>
+            </div>
+          </section>
+          <p id="clock-status" class="clock-status" role="status" aria-live="polite"></p>
+          <p id="clock-warning" class="notice clock-warning" hidden>Connect a ready display with at least five configured drums to use the prop clock.</p>
+        </div>
+      </div>
+    </section>
     <section id="page-config" class="page-panel" role="tabpanel" aria-labelledby="tab-config" hidden>
-      <div class="heading"><div><p class="eyebrow">HARDWARE / 02</p><h1>Config</h1></div><button id="request-state" disabled>Refresh status</button></div>
+      <div class="heading"><div><p class="eyebrow">HARDWARE / 03</p><h1>Config</h1></div><button id="request-state" disabled>Refresh status</button></div>
       <div class="config-setting"><label for="display-count">Drums in this display</label><input id="display-count" type="number" min="1" max="255" value="10"><span>Detected hardware capacity: <strong id="hardware-count">--</strong></span></div>
+      <div class="config-setting"><label for="default-prop-clock-time">Prop clock default time</label><input id="default-prop-clock-time" type="time" value="22:00"><span>Prefills the clock time entry; it does not move the display.</span></div>
       <p id="config-count-warning" class="notice" hidden>Configured drum count exceeds the detected hardware capacity. Display commands are disabled.</p>
       <div class="config-layout">
         <section class="hardware-section"><div class="section-title"><div><p class="eyebrow">HARDWARE</p><h2>Drums</h2></div></div>
@@ -52,7 +94,7 @@
       </div>
     </section>
     <section id="page-connection" class="page-panel" role="tabpanel" aria-labelledby="tab-connection" hidden>
-      <div class="heading"><div><p class="eyebrow">DEVICE / 03</p><h1>Connection</h1></div></div>
+      <div class="heading"><div><p class="eyebrow">DEVICE / 04</p><h1>Connection</h1></div></div>
       <div class="connection-settings"><div class="port-control"><label for="ports">Serial port</label><div class="port-actions"><select id="ports"><option value="">No ports found</option></select><button id="refresh-ports" class="icon-button" title="Refresh ports" aria-label="Refresh ports">&#8635;</button><button id="connect" class="primary">Connect</button><button id="disconnect" hidden>Disconnect</button></div><label class="auto-connect-toggle" title="Reopening a serial port may reset the ESP32 and trigger homing"><input id="auto-connect" type="checkbox"><span>Auto-connect</span></label></div>
         <section class="overview" aria-label="Connection status"><div><span class="metric-label">MODULES</span><strong id="module-count">--</strong></div><div><span class="metric-label">LOOPBACK</span><strong id="loopback">--</strong></div><div><span class="metric-label">LAST UPDATE</span><strong id="last-update">--</strong></div><div><span class="metric-label">FIRMWARE</span><strong id="firmware">--</strong></div></section>
       </div>
