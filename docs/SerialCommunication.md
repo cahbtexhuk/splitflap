@@ -47,3 +47,10 @@ The [legacy firmware handler](../firmware/esp32/splitflap/serial_legacy_json_pro
 ## Troubleshooting
 
 Check port and baud, close competing serial monitors, and allow time for startup after reset. On Linux, grant serial-device permissions. If compatible general state does not arrive, firmware may be older or a different build. Sensor errors, missed-home counters and loopback faults require hardware investigation. Re-homing clears counters, so record diagnostics first. Confirm offset saves using firmware logs rather than ACK alone.
+## Wi-Fi transport
+
+The optional `chainlink_wifi` firmware target exposes the same COBS-delimited protobuf and CRC32 protocol over one TCP client, on port 23040 by default. The Python web app's Connection page can connect by IP address or hostname using this transport; it still hosts the browser UI itself. The serial-only `chainlink` target is unchanged in its configuration.
+
+The ESP32 first tries saved station credentials for 30 seconds, then starts its password-protected setup AP. If it has not joined a network within five minutes of boot, it disables Wi-Fi and remains in serial mode until reboot. After a successful station connection it stays in Wi-Fi mode through network outages and retries. **Any received UART byte switches permanently to serial mode until reboot**, including while a network client is active; a serial monitor or app auto-connect can therefore interrupt Wi-Fi. Each network session resets framing and nonce state.
+
+The WiFiManager portal is accessible at `/wificonfig` on the setup AP or connected station address; saving network settings reboots the ESP32. Wi-Fi credentials are stored separately from FFat calibration data. The setup AP uses the user-defined password in the gitignored local configuration header. TCP control and the station portal are unauthenticated and unencrypted; use only on a trusted LAN and do not expose them to the internet. See the [web controller setup guide](../software/chainlink/webapp/README.md) for build and provisioning instructions.

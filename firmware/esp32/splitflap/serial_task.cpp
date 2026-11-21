@@ -22,8 +22,15 @@ SerialTask::SerialTask(SplitflapTask& splitflap_task, const uint8_t task_core) :
         Logger(),
         splitflap_task_(splitflap_task),
         stream_(),
+    #if SPLITFLAP_WIFI
+        wifi_transport_(*this, task_core),
+    #endif
         legacy_protocol_(splitflap_task_, stream_),
+    #if SPLITFLAP_WIFI
+        proto_protocol_(splitflap_task_, wifi_transport_) {
+    #else
         proto_protocol_(splitflap_task_, stream_) {
+    #endif
     log_queue_ = xQueueCreate(10, sizeof(std::string *));
     assert(log_queue_ != NULL);
 
@@ -34,8 +41,10 @@ SerialTask::SerialTask(SplitflapTask& splitflap_task, const uint8_t task_core) :
 void SerialTask::run() {
     stream_.begin();
 
-    // Start in legacy protocol mode
     legacy_protocol_.init();
+#if SPLITFLAP_WIFI
+    SerialProtocol* current_protocol = &proto_protocol_;
+#else
     SerialProtocol* current_protocol = &legacy_protocol_;
 
     ProtocolChangeCallback protocol_change_callback = [this, &current_protocol] (uint8_t protocol) {
@@ -56,11 +65,25 @@ void SerialTask::run() {
 
     legacy_protocol_.setProtocolChangeCallback(protocol_change_callback);
     proto_protocol_.setProtocolChangeCallback(protocol_change_callback);
+#endif
 
     splitflap_task_.setLogger(this);
 
     SplitflapState last_state = {};
+#if SPLITFLAP_WIFI
+    wifi_transport_.begin();
+#endif
     while(1) {
+#if SPLITFLAP_WIFI
+        for (int count = 0; count < 64 && stream_.available(); count++) {
+            stream_.read();
+        }
+        if (wifi_transport_.takeNewClient()) {
+            proto_protocol_.resetSession();
+            SplitflapState state = splitflap_task_.getState();
+            current_protocol->handleState(state, state);
+        }
+#endif
         SplitflapState new_state = splitflap_task_.getState();
 
         if (new_state != last_state) {
@@ -68,17 +91,36 @@ void SerialTask::run() {
             last_state = new_state;
         }
 
+    #if SPLITFLAP_WIFI
+        if (wifi_transport_.hasClient()) {
+            current_protocol->loop();
+        }
+    #else
         current_protocol->loop();
+    #endif
 
         std::string* log_string;
         while (xQueueReceive(log_queue_, &log_string, 0) == pdTRUE) {
+#if SPLITFLAP_WIFI
+            legacy_protocol_.log(log_string->c_str());
+            if (wifi_transport_.hasClient()) {
+                current_protocol->log(log_string->c_str());
+            }
+#else
             current_protocol->log(log_string->c_str());
+#endif
             delete log_string;
         }
 
         PB_SupervisorState supervisor_state;
         if (xQueueReceive(supervisor_state_queue_, &supervisor_state, 0) == pdTRUE) {
+#if SPLITFLAP_WIFI
+            if (wifi_transport_.hasClient()) {
+                current_protocol->sendSupervisorState(supervisor_state);
+            }
+#else
             current_protocol->sendSupervisorState(supervisor_state);
+#endif
         }
         delay(1);
     }

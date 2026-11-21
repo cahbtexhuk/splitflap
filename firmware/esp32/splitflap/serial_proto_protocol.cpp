@@ -20,6 +20,7 @@
 #include "pb_encode.h"
 #include "pb_decode.h"
 #include "serial_proto_protocol.h"
+#include <new>
 
 static SerialProtoProtocol* singleton_for_packet_serial = 0;
 
@@ -29,16 +30,22 @@ static const uint16_t PERIODIC_STATE_INTERVAL_MILLIS = 5000;
 SerialProtoProtocol::SerialProtoProtocol(SplitflapTask& splitflap_task, Stream& stream) :
         SerialProtocol(splitflap_task),
         stream_(stream) {
-    packet_serial_.setStream(&stream);
-
     // Note: not threadsafe or instance safe!! but PacketSerial requires a legacy function pointer, so we can't
     // use a member, std::function, or lambda with captures
     assert(singleton_for_packet_serial == 0);
     singleton_for_packet_serial = this;
+    resetSession();
+}
 
+void SerialProtoProtocol::resetSession() {
+    packet_serial_.~PacketHandler();
+    new (&packet_serial_) PacketHandler();
+    packet_serial_.setStream(&stream_);
     packet_serial_.setPacketHandler([](const uint8_t* buffer, size_t size) {
         singleton_for_packet_serial->handlePacket(buffer, size);
     });
+    last_nonce_valid_ = false;
+    state_requested_ = true;
 }
 
 void SerialProtoProtocol::handleState(const SplitflapState& old_state, const SplitflapState& new_state) {
@@ -175,7 +182,7 @@ void SerialProtoProtocol::handlePacket(const uint8_t* buffer, size_t size) {
 
     // Always ACK immediately
     ack(pb_rx_buffer_.nonce);
-    if (pb_rx_buffer_.nonce == last_nonce_) {
+    if (last_nonce_valid_ && pb_rx_buffer_.nonce == last_nonce_) {
         // Ignore any extraneous retries
         char buf[200];
         snprintf(buf, sizeof(buf), "Already handled nonce %u", pb_rx_buffer_.nonce);
@@ -183,6 +190,7 @@ void SerialProtoProtocol::handlePacket(const uint8_t* buffer, size_t size) {
         return;
     }
     last_nonce_ = pb_rx_buffer_.nonce;
+    last_nonce_valid_ = true;
     
     switch (pb_rx_buffer_.which_payload) {
         case PB_ToSplitflap_splitflap_command_tag: {
