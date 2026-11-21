@@ -1,0 +1,13 @@
+**
+!software/
+!software/chainlink/
+!software/chainlink/proto_gen/
+!software/chainlink/proto_gen/splitflap_pb2.py
+!software/chainlink/proto_gen/nanopb_pb2.py
+!software/chainlink/webapp/
+!software/chainlink/webapp/app.py
+!software/chainlink/webapp/protocol.py
+!software/chainlink/webapp/serial_service.py
+!software/chainlink/webapp/requirements.txt
+!software/chainlink/webapp/static/
+!software/chainlink/webapp/static/**

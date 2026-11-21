@@ -2,6 +2,8 @@
 
 A single Python process controls standard ESP32 Chainlink over USB or TCP/IP with the optional Wi-Fi firmware. The dashboard provides text, clear, module status, homing, offsets and logs. Classic Arduino and Chainlink Base-specific controls are not supported.
 
+For container deployment, see [DOCKER.md](DOCKER.md). For copy-paste prop-clock requests, see [CLOCK_API.md](CLOCK_API.md).
+
 ## Setup
 
 Install Python 3.10 or 3.11. From the repository root on Windows:

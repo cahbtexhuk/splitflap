@@ -1,0 +1,20 @@
+services:
+  splitflap:
+    image: splitflap-webapp:local
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${SPLITFLAP_BIND_IP:-127.0.0.1}:${SPLITFLAP_HTTP_PORT:-8765}:8765"
+    volumes:
+      - splitflap-settings:/data
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --allowed-host
+      - "${SPLITFLAP_ALLOWED_HOST:?Set SPLITFLAP_ALLOWED_HOST to the Linux host IP or hostname}"
+
+volumes:
+  splitflap-settings:
+    name: "${SPLITFLAP_SETTINGS_VOLUME:-splitflap-settings}"
