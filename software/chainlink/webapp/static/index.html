@@ -4,13 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Splitflap Control</title>
+  <script>try { if (localStorage.getItem('splitflap.theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch (error) {}</script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">S<span>F</span></span><div><strong>Splitflap</strong><small>CONTROL DESK</small></div></div>
-    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Disconnected</span><span class="connection-separator">/</span><span id="port-name">No port</span></div>
+    <div class="header-actions">
+      <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Disconnected</span><span class="connection-separator">/</span><span id="port-name">No port</span></div>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme">&#9789;</button>
+    </div>
   </header>
   <main>
     <nav class="page-nav" aria-label="Main navigation" role="tablist">

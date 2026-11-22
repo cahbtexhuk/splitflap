@@ -12,6 +12,28 @@ const PORT_STORAGE_KEY = 'splitflap.serialPort';
 const TRANSPORT_STORAGE_KEY = 'splitflap.transport';
 const HOST_STORAGE_KEY = 'splitflap.networkHost';
 const NETWORK_PORT_STORAGE_KEY = 'splitflap.networkPort';
+const THEME_STORAGE_KEY = 'splitflap.theme';
+
+function renderThemeToggle() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const toggle = $('theme-toggle');
+  toggle.setAttribute('aria-pressed', String(dark));
+  toggle.title = dark ? 'Switch to light theme' : 'Switch to dark theme';
+  toggle.textContent = dark ? '\u2600' : '\u263d';
+}
+renderThemeToggle();
+$('theme-toggle').addEventListener('click', () => {
+  const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  renderThemeToggle();
+});
+window.addEventListener('storage', event => {
+  if (event.key === THEME_STORAGE_KEY) {
+    document.documentElement.dataset.theme = event.newValue === 'dark' ? 'dark' : 'light';
+    renderThemeToggle();
+  }
+});
 
 $('network-host').value = localStorage.getItem(HOST_STORAGE_KEY) || '';
 $('network-port').value = localStorage.getItem(NETWORK_PORT_STORAGE_KEY) || '23040';
