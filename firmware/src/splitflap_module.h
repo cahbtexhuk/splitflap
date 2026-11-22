@@ -66,6 +66,7 @@ class SplitflapModule {
 
   // State:
   bool last_home = false;
+  bool display_move = false;
   unsigned long last_update_micros = 0;
 
   // Tracks the most recent target flap index. Not used during motion, but needed to recalculate target step if we
@@ -241,6 +242,7 @@ inline void SplitflapModule::GoToFlapIndex(uint8_t index) {
         return;
     }
     target_flap_index = index;
+    display_move = true;
     GoToTargetFlapIndex();
 }
 
@@ -260,6 +262,7 @@ inline void SplitflapModule::FindAndRecalibrateHome() {
         return;
     }
 
+    display_move = false;
     state = LOOK_FOR_HOME;
     delta_steps = MAX_STEPS_LOOKING_FOR_HOME;
 #endif
@@ -332,7 +335,9 @@ inline void SplitflapModule::Update() {
 #endif
 
             if (reset_to_home) {
+                bool resume_display_move = display_move;
                 FindAndRecalibrateHome();
+                display_move = resume_display_move;
                 target_accel_step = 0;
             } else {
                 // Update speed based on distance to target
@@ -380,7 +385,11 @@ inline void SplitflapModule::Update() {
             current_accel_step--;
         }
 
-        current_period = pgm_read_word_near(Acceleration::ACCEL_STEP_PERIODS + current_accel_step);
+        uint32_t period = pgm_read_word_near(Acceleration::ACCEL_STEP_PERIODS + current_accel_step);
+        if (state == NORMAL && display_move && current_accel_step > 0) {
+            period *= 2;
+        }
+        current_period = period > UINT16_MAX ? UINT16_MAX : static_cast<uint16_t>(period);
 
         if (current_accel_step > 0) {
             current_step++;
@@ -421,6 +430,7 @@ void SplitflapModule::ResetState() {
     target_flap_index = 0;
     current_step = 0;
     delta_steps = 0;
+    display_move = false;
 
 #if HOME_CALIBRATION_ENABLED
     home_state = IGNORE;
@@ -436,12 +446,14 @@ bool SplitflapModule::GetHomeState() {
 }
 
 void SplitflapModule::IncreaseOffset(uint8_t flap_tenths) {
+    display_move = false;
     offset_steps += flap_tenths * STEPS_PER_REVOLUTION / NUM_FLAPS / 10;
     offset_steps %= STEPS_PER_REVOLUTION;
     GoToTargetFlapIndex();
 }
 
 void SplitflapModule::SetOffset() {
+    display_move = false;
     offset_steps = current_step;
     target_flap_index = 0;
     GoToTargetFlapIndex();

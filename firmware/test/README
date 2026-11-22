@@ -9,3 +9,10 @@ in the development cycle.
 
 More information about PIO Unit Testing:
 - https://docs.platformio.org/page/plus/unit-testing.html
+
+Run the host-side motor timing tests from the repository root with a C++11 compiler:
+
+	g++ -std=c++11 -O2 -Ifirmware/test/native firmware/test/test_splitflap_motion.cpp -o /tmp/test_splitflap_motion
+	/tmp/test_splitflap_motion
+
+The test uses a simulated Arduino clock and sensors; it does not access hardware.

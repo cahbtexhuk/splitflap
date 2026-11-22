@@ -31,7 +31,7 @@ bool WifiTransport::takeNewClient() {
 
 bool WifiTransport::hasClient() {
     SemaphoreGuard lock(client_mutex_);
-    return client_.connected();
+    return client_.fd() >= 0;
 }
 
 int WifiTransport::available() {
@@ -57,7 +57,7 @@ size_t WifiTransport::write(uint8_t value) {
 
 size_t WifiTransport::write(const uint8_t* data, size_t size) {
     SemaphoreGuard lock(client_mutex_);
-    return new_client_ || !client_.connected() ? 0 : client_.write(data, size);
+    return new_client_ || client_.fd() < 0 ? 0 : client_.write(data, size);
 }
 
 void WifiTransport::configurePortal() {
@@ -86,7 +86,7 @@ void WifiTransport::configurePortal() {
 void WifiTransport::serviceClient() {
     if (!listener_started_) return;
     WiFiClient incoming = server_.available();
-    if (!incoming) return;
+    if (incoming.fd() < 0) return;
     SemaphoreGuard lock(client_mutex_);
     client_.stop();
     client_ = incoming;
